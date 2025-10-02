@@ -1,0 +1,10 @@
+
+services:
+  - type: web
+    name: mafia-game
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python mafia.py
+    envVars:
+      - key: PORT
+        value: 10000
