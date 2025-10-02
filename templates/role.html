@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Your Role - Mafia Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+      padding: 2rem; 
+      background: linear-gradient(135deg, #0b1220 0%, #1e293b 50%, #0f172a 100%);
+      color: #e5e7eb; 
+      min-height: 100vh;
+      margin: 0;
+      overflow-x: hidden;
+    }
+    
+    .card { 
+      max-width: 600px; 
+      margin: 5vh auto; 
+      background: linear-gradient(145deg, #111827, #1f2937); 
+      padding: 2rem; 
+      border-radius: 20px; 
+      box-shadow: 
+        0 20px 40px rgba(0,0,0,0.5),
+        inset 0 1px 0 rgba(255,255,255,0.1); 
+      border: 1px solid #374151;
+      position: relative;
+      animation: cardEntrance 0.8s ease-out;
+    }
+    
+    @keyframes cardEntrance {
+      from {
+        opacity: 0;
+        transform: translateY(50px) scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+    
+    h1 { 
+      margin-top: 0; 
+      font-size: 1.8rem; 
+      text-align: center;
+      background: linear-gradient(45deg, #fbbf24, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: titleGlow 2s ease-in-out infinite alternate;
+    }
+    
+    @keyframes titleGlow {
+      from { filter: drop-shadow(0 0 5px rgba(251, 191, 36, 0.3)); }
+      to { filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.6)); }
+    }
+    
+    .role-container {
+      position: relative;
+      margin: 2rem 0;
+      text-align: center;
+    }
+    
+    .role { 
+      font-size: 3rem; 
+      font-weight: 900; 
+      text-align: center; 
+      padding: 2rem; 
+      background: linear-gradient(135deg, #1f2937, #374151, #1f2937);
+      border-radius: 15px; 
+      margin: 2rem 0;
+      position: relative;
+      overflow: hidden;
+      border: 3px solid transparent;
+      background-clip: padding-box;
+      animation: roleReveal 1.5s ease-out 0.5s both;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+    
+    .role::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      left: -3px;
+      right: -3px;
+      bottom: -3px;
+      background: linear-gradient(45deg, #fbbf24, #f59e0b, #dc2626, #7c3aed, #2563eb, #059669, #fbbf24);
+      background-size: 400% 400%;
+      border-radius: 18px;
+      z-index: -1;
+      animation: borderGlow 3s ease-in-out infinite;
+    }
+    
+    @keyframes borderGlow {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    
+    @keyframes roleReveal {
+      0% {
+        opacity: 0;
+        transform: scale(0.5) rotateY(90deg);
+        filter: blur(10px);
+      }
+      50% {
+        opacity: 0.7;
+        transform: scale(1.1) rotateY(45deg);
+        filter: blur(5px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1) rotateY(0deg);
+        filter: blur(0px);
+      }
+    }
+    
+    .role-text {
+      background: linear-gradient(45deg, #fbbf24, #f59e0b, #fbbf24);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: textShimmer 2s ease-in-out infinite;
+      position: relative;
+      z-index: 1;
+    }
+    
+    @keyframes textShimmer {
+      0%, 100% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+    }
+    
+    .sparkles {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      pointer-events: none;
+      overflow: hidden;
+      border-radius: 15px;
+    }
+    
+    .sparkle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: #fbbf24;
+      border-radius: 50%;
+      animation: sparkleFloat 3s ease-in-out infinite;
+    }
+    
+    @keyframes sparkleFloat {
+      0%, 100% {
+        opacity: 0;
+        transform: translateY(20px) scale(0);
+      }
+      50% {
+        opacity: 1;
+        transform: translateY(-20px) scale(1);
+      }
+    }
+    
+    .description {
+      text-align: center;
+      font-size: 1.1rem;
+      margin: 1.5rem 0;
+      color: #cbd5e1;
+      animation: fadeInUp 1s ease-out 1s both;
+    }
+    
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .refresh-btn { 
+      margin-top: 2rem; 
+      padding: 1rem 2rem; 
+      font-size: 1.1rem; 
+      background: linear-gradient(45deg, #2563eb, #1d4ed8);
+      color: white; 
+      border: none; 
+      border-radius: 12px; 
+      cursor: pointer; 
+      width: 100%;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+    }
+    
+    .refresh-btn:hover { 
+      background: linear-gradient(45deg, #1d4ed8, #1e40af);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+    }
+    
+    .refresh-btn:active {
+      transform: translateY(0);
+    }
+    
+    a { 
+      color: #93c5fd; 
+      text-decoration: none; 
+      transition: all 0.3s ease;
+    }
+    
+    a:hover { 
+      color: #dbeafe;
+      text-decoration: underline; 
+      text-shadow: 0 0 8px rgba(147, 197, 253, 0.5);
+    }
+    
+    .footer-text {
+      text-align: center;
+      margin-top: 2rem;
+      animation: fadeInUp 1s ease-out 1.5s both;
+    }
+    
+    /* Floating particles background */
+    .particles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: -1;
+    }
+    
+    .particle {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: rgba(251, 191, 36, 0.3);
+      border-radius: 50%;
+      animation: particleFloat 8s ease-in-out infinite;
+    }
+    
+    @keyframes particleFloat {
+      0%, 100% {
+        opacity: 0;
+        transform: translateY(100vh) translateX(0);
+      }
+      10%, 90% {
+        opacity: 1;
+      }
+      50% {
+        transform: translateY(-10vh) translateX(50px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="particles" id="particles"></div>
+  
+  <div class="card">
+    <h1>Welcome, {{ name | e }}!</h1>
+    <p class="description">The game has started! Your secret role is:</p>
+    
+    <div class="role-container">
+      <div class="role">
+        <div class="sparkles" id="sparkles"></div>
+        <div class="role-text">{{ role | e }}</div>
+      </div>
+    </div>
+    
+    <p class="description">Good luck! The game is now in progress.</p>
+    
+    <button class="refresh-btn" onclick="location.reload()">🔄 Refresh</button>
+    
+    <p class="footer-text"><a href="{{ url_for('home') }}">← Return to main page</a></p>
+  </div>
+
+  <script>
+    // Create floating particles
+    function createParticles() {
+      const particlesContainer = document.getElementById('particles');
+      for (let i = 0; i < 20; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.animationDelay = Math.random() * 8 + 's';
+        particle.style.animationDuration = (Math.random() * 4 + 6) + 's';
+        particlesContainer.appendChild(particle);
+      }
+    }
+    
+    // Create sparkles around the role
+    function createSparkles() {
+      const sparklesContainer = document.getElementById('sparkles');
+      for (let i = 0; i < 15; i++) {
+        const sparkle = document.createElement('div');
+        sparkle.className = 'sparkle';
+        sparkle.style.left = Math.random() * 100 + '%';
+        sparkle.style.top = Math.random() * 100 + '%';
+        sparkle.style.animationDelay = Math.random() * 3 + 's';
+        sparkle.style.animationDuration = (Math.random() * 2 + 2) + 's';
+        sparklesContainer.appendChild(sparkle);
+      }
+    }
+    
+    // Initialize effects
+    document.addEventListener('DOMContentLoaded', function() {
+      createParticles();
+      createSparkles();
+      
+      // Add dramatic entrance sound effect (optional)
+      // You could add audio here if desired
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mafia Host Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#0b1220; color:#e5e7eb; }
+    .wrap { max-width: 800px; margin: 0 auto; }
+    h1 { margin: 0 0 0.5rem; font-size: 1.8rem; }
+    .sub { color:#9ca3af; margin-bottom: 1.25rem; }
+    .panel { background: #111827; border: 1px solid #1f2937; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; }
+    .role-input { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
+    .role-input input[type="text"] { flex: 1; padding: 0.5rem; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 6px; }
+    .role-input input[type="number"] { width: 80px; padding: 0.5rem; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 6px; }
+    .btn { padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
+    .btn:hover { background: #1d4ed8; }
+    .btn-danger { background: #dc2626; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-success { background: #059669; }
+    .btn-success:hover { background: #047857; }
+    .btn:disabled { background: #6b7280; cursor: not-allowed; }
+    ul { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+    li { padding: 0.6rem 0.75rem; margin: 0.35rem 0; background: #0b162f; border: 1px solid #233150; border-radius: 10px; }
+    .count { font-weight: 600; margin-left: 0.35rem; }
+    .time { color:#9ca3af; font-size: 0.9rem; }
+    .small { font-size: 0.9rem; color:#9ca3af; margin-top: 0.75rem; }
+    .badge { display:inline-block; font-size: 0.8rem; padding: 0.2rem 0.5rem; background:#1f2937; border:1px solid #334155; border-radius:6px; margin-left:0.5rem; color:#93c5fd; }
+    .total-count { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; }
+    .status { padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; }
+    .status.ready { background: #065f46; border: 1px solid #059669; }
+    .status.waiting { background: #7c2d12; border: 1px solid #ea580c; }
+    .remove-btn { background: #dc2626; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mafia Host Dashboard <span class="badge" id="gameStatus">Setup</span></h1>
+    <div class="sub">Set up roles and wait for players to join.</div>
+    
+    <div id="statusPanel" class="status waiting">
+      <div id="statusText">Waiting for role setup...</div>
+    </div>
+
+    <div class="panel">
+      <h3>Role Setup</h3>
+      <div id="rolesContainer"></div>
+      <button class="btn" onclick="addRole()" id="addRoleBtn">Add Role</button>
+      <div class="total-count">Total Roles: <span id="totalRoles">0</span></div>
+    </div>
+
+    <div class="panel">
+      <div>Players Joined <span class="count" id="playerCount">0</span></div>
+      <ul id="playerList"></ul>
+      <div class="small time" id="time">Last updated: —</div>
+    </div>
+
+    <div class="panel">
+      <button class="btn btn-success" onclick="assignRoles()" id="assignBtn" disabled>Assign Roles</button>
+      <button class="btn btn-danger" onclick="resetGame()" id="resetBtn">Reset Game</button>
+    </div>
+
+    <p class="small">Share the join link: <code id="joinLink"></code></p>
+  </div>
+
+  <script>
+    const playerListEl = document.getElementById('playerList');
+    const playerCountEl = document.getElementById('playerCount');
+    const timeEl = document.getElementById('time');
+    const joinLinkEl = document.getElementById('joinLink');
+    const rolesContainer = document.getElementById('rolesContainer');
+    const totalRolesEl = document.getElementById('totalRoles');
+    const assignBtn = document.getElementById('assignBtn');
+    const addRoleBtn = document.getElementById('addRoleBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const statusPanel = document.getElementById('statusPanel');
+    const statusText = document.getElementById('statusText');
+    const gameStatus = document.getElementById('gameStatus');
+
+    joinLinkEl.textContent = `${location.protocol}//${location.host}/`;
+
+    let roles = [];
+    let gameStarted = false;
+
+    function escapeHtml(str) {
+      const p = document.createElement('p');
+      p.innerText = str;
+      return p.innerHTML;
+    }
+
+    function addRole() {
+      const roleDiv = document.createElement('div');
+      roleDiv.className = 'role-input';
+      roleDiv.innerHTML = `
+        <input type="text" placeholder="Role name (e.g., Mafia, Villager)" class="role-name">
+        <input type="number" min="1" value="1" class="role-count">
+        <button class="btn remove-btn" onclick="removeRole(this)">Remove</button>
+      `;
+      rolesContainer.appendChild(roleDiv);
+      updateTotalRoles();
+    }
+
+    function removeRole(btn) {
+      btn.parentElement.remove();
+      updateTotalRoles();
+    }
+
+    function updateTotalRoles() {
+      const roleCounts = document.querySelectorAll('.role-count');
+      let total = 0;
+      roleCounts.forEach(input => {
+        total += parseInt(input.value) || 0;
+      });
+      totalRolesEl.textContent = total;
+      return total;
+    }
+
+    function collectRoles() {
+      const roleInputs = document.querySelectorAll('.role-input');
+      const collectedRoles = [];
+      
+      roleInputs.forEach(roleDiv => {
+        const nameInput = roleDiv.querySelector('.role-name');
+        const countInput = roleDiv.querySelector('.role-count');
+        const name = nameInput.value.trim();
+        const count = parseInt(countInput.value) || 0;
+        
+        if (name && count > 0) {
+          collectedRoles.push({ name, count });
+        }
+      });
+      
+      return collectedRoles;
+    }
+
+    async function syncRoles() {
+      const currentRoles = collectRoles();
+      
+      try {
+        // Don't reset if game already started
+        const statusResp = await fetch('/api/players');
+        const statusData = await statusResp.json();
+        if (statusData.game_started) {
+          return;
+        }
+        
+        // Clear server roles only (not players!)
+        await fetch('/api/reset-roles', { method: 'POST' });
+        
+        // Add each role
+        for (const role of currentRoles) {
+          const resp = await fetch('/api/roles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(role)
+          });
+          if (!resp.ok) {
+            console.error('Failed to add role:', role);
+          }
+        }
+      } catch (e) {
+        console.error('Error syncing roles:', e);
+        throw e;
+      }
+    }
+
+    async function assignRoles() {
+      // First sync roles to server
+      await syncRoles();
+      
+      // Small delay to ensure sync completes
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      try {
+        const resp = await fetch('/api/assign', { method: 'POST' });
+        const data = await resp.json();
+        
+        if (data.success) {
+          gameStarted = true;
+          addRoleBtn.disabled = true;
+          assignBtn.disabled = true;
+          document.querySelectorAll('.role-name, .role-count, .remove-btn').forEach(el => el.disabled = true);
+          gameStatus.textContent = 'Started';
+          statusText.textContent = 'Game started! Roles have been assigned.';
+          statusPanel.className = 'status ready';
+        } else {
+          alert('Error: ' + data.error);
+          console.error('Assignment error:', data);
+        }
+      } catch (e) {
+        console.error('Error assigning roles:', e);
+        alert('Error assigning roles: ' + e.message);
+      }
+    }
+
+    async function resetGame() {
+      if (confirm('Are you sure you want to reset the game? This will clear all players and roles.')) {
+        try {
+          await fetch('/api/reset', { method: 'POST' });
+          location.reload();
+        } catch (e) {
+          alert('Error resetting game');
+        }
+      }
+    }
+
+    async function refresh() {
+      try {
+        const resp = await fetch('/api/players', { cache: 'no-store' });
+        const data = await resp.json();
+        
+        playerCountEl.textContent = data.count;
+        
+        playerListEl.innerHTML = '';
+        for (const playerName of data.players) {
+          const li = document.createElement('li');
+          li.innerHTML = escapeHtml(playerName);
+          playerListEl.appendChild(li);
+        }
+        
+        // Get frontend total roles
+        const frontendTotalRoles = updateTotalRoles();
+        
+        // Check if we can start based on frontend roles (not server roles)
+        const canStart = data.count > 0 && frontendTotalRoles > 0 && data.count === frontendTotalRoles && !data.game_started;
+        assignBtn.disabled = !canStart;
+        
+        if (data.game_started) {
+          gameStarted = true;
+          addRoleBtn.disabled = true;
+          assignBtn.disabled = true;
+          document.querySelectorAll('.role-name, .role-count, .remove-btn').forEach(el => el.disabled = true);
+          gameStatus.textContent = 'Started';
+          statusText.textContent = 'Game started! Roles have been assigned.';
+          statusPanel.className = 'status ready';
+        } else if (canStart) {
+          statusText.textContent = `Ready to start! ${data.count} players joined, ${frontendTotalRoles} roles configured.`;
+          statusPanel.className = 'status ready';
+        } else {
+          statusText.textContent = `Waiting... ${data.count}/${frontendTotalRoles} players joined.`;
+          statusPanel.className = 'status waiting';
+        }
+        
+        const now = new Date();
+        timeEl.textContent = 'Last updated: ' + now.toLocaleTimeString();
+      } catch (e) {
+        timeEl.textContent = 'Last updated: (error contacting server)';
+      }
+    }
+
+    // Add event listeners for role count changes
+    document.addEventListener('input', (e) => {
+      if (e.target.classList.contains('role-count') || e.target.classList.contains('role-name')) {
+        updateTotalRoles();
+        // Trigger a refresh to update button state
+        setTimeout(refresh, 100);
+      }
+    });
+
+    // Add initial role
+    addRole();
+
+    // Poll every second
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

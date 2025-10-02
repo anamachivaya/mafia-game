@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Join Mafia Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#f7fafc; color:#222; }
+    .card { max-width: 520px; margin: 5vh auto; background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+    h1 { margin-top: 0; font-size: 1.6rem; }
+    label { display:block; margin: 1rem 0 0.5rem; font-weight: 600; }
+    input[type="text"] { width: 100%; padding: 0.8rem; font-size: 1rem; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; }
+    button { margin-top: 1rem; padding: 0.8rem 1.1rem; font-size: 1rem; background: #2563eb; color: white; border: none; border-radius: 10px; cursor: pointer; width: 100%; }
+    button:hover { background:#1e4fd4; }
+    .note { margin-top: 0.75rem; color:#64748b; font-size: 0.9rem; }
+    .error { color:#b91c1c; margin-top: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Join Mafia Game</h1>
+
+    <form method="post" action="{{ url_for('join') }}">
+      <label for="name">Your name</label>
+      <input id="name" name="name" type="text" placeholder="Enter your name..." maxlength="50" required />
+      <button type="submit">Join Game</button>
+    </form>
+
+    {% if error %}
+      <div class="error">{{ error | e }}</div>
+    {% endif %}
+
+    <p class="note">After you submit, wait for the host to assign roles.</p>
+  </div>
+</body>
+</html>
