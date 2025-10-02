@@ -67,7 +67,8 @@ def api_players():
             "roles": roles,
             "total_roles": total_roles,
             "game_started": game_started,
-            "can_start": len(players) == total_roles and total_roles > 0
+            "can_start": len(players) == total_roles and total_roles > 0,
+            "assignments": assignments if game_started else {}  # Only show assignments after game starts
         }
     return jsonify(data)
 

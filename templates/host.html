@@ -5,32 +5,212 @@
   <title>Mafia Host Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#0b1220; color:#e5e7eb; }
-    .wrap { max-width: 800px; margin: 0 auto; }
-    h1 { margin: 0 0 0.5rem; font-size: 1.8rem; }
-    .sub { color:#9ca3af; margin-bottom: 1.25rem; }
-    .panel { background: #111827; border: 1px solid #1f2937; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; }
-    .role-input { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; }
-    .role-input input[type="text"] { flex: 1; padding: 0.5rem; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 6px; }
-    .role-input input[type="number"] { width: 80px; padding: 0.5rem; border: 1px solid #374151; background: #1f2937; color: #e5e7eb; border-radius: 6px; }
-    .btn { padding: 0.5rem 1rem; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; }
-    .btn:hover { background: #1d4ed8; }
-    .btn-danger { background: #dc2626; }
-    .btn-danger:hover { background: #b91c1c; }
-    .btn-success { background: #059669; }
-    .btn-success:hover { background: #047857; }
-    .btn:disabled { background: #6b7280; cursor: not-allowed; }
-    ul { list-style: none; padding: 0; margin: 0.5rem 0 0; }
-    li { padding: 0.6rem 0.75rem; margin: 0.35rem 0; background: #0b162f; border: 1px solid #233150; border-radius: 10px; }
-    .count { font-weight: 600; margin-left: 0.35rem; }
-    .time { color:#9ca3af; font-size: 0.9rem; }
-    .small { font-size: 0.9rem; color:#9ca3af; margin-top: 0.75rem; }
-    .badge { display:inline-block; font-size: 0.8rem; padding: 0.2rem 0.5rem; background:#1f2937; border:1px solid #334155; border-radius:6px; margin-left:0.5rem; color:#93c5fd; }
-    .total-count { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; }
-    .status { padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; }
-    .status.ready { background: #065f46; border: 1px solid #059669; }
-    .status.waiting { background: #7c2d12; border: 1px solid #ea580c; }
-    .remove-btn { background: #dc2626; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+      padding: 2rem; 
+      background: #0f172a; 
+      color: #e2e8f0; 
+      min-height: 100vh;
+      margin: 0;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    h1 { 
+      margin-top: 0; 
+      font-size: 1.8rem; 
+      color: #f1f5f9;
+    }
+    .sub { 
+      color: #94a3b8; 
+      margin-bottom: 2rem; 
+    }
+    .panel { 
+      background: #1e293b; 
+      padding: 1.5rem; 
+      margin: 1rem 0; 
+      border-radius: 12px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
+      border: 1px solid #334155;
+    }
+    .btn { 
+      padding: 0.6rem 1rem; 
+      font-size: 0.9rem; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin-right: 0.5rem; 
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-success { 
+      background: #059669; 
+      color: white; 
+    }
+    .btn-success:hover { 
+      background: #047857; 
+    }
+    .btn-danger { 
+      background: #dc2626; 
+      color: white; 
+    }
+    .btn-danger:hover { 
+      background: #b91c1c; 
+    }
+    .btn:disabled { 
+      background: #475569; 
+      cursor: not-allowed; 
+      color: #94a3b8;
+    }
+    .badge { 
+      background: #2563eb; 
+      color: white; 
+      padding: 0.25rem 0.5rem; 
+      border-radius: 6px; 
+      font-size: 0.8rem; 
+    }
+    .status { 
+      padding: 1rem; 
+      border-radius: 8px; 
+      margin-bottom: 1rem; 
+    }
+    .status.waiting { 
+      background: #451a03; 
+      color: #fbbf24; 
+      border: 1px solid #92400e; 
+    }
+    .status.ready { 
+      background: #064e3b; 
+      color: #34d399; 
+      border: 1px solid #059669; 
+    }
+    .count { 
+      background: #374151; 
+      padding: 0.25rem 0.5rem; 
+      border-radius: 4px; 
+      font-weight: bold; 
+      color: #f1f5f9;
+    }
+    .small { 
+      font-size: 0.85rem; 
+      color: #94a3b8; 
+    }
+    .time { 
+      margin-top: 0.5rem; 
+    }
+    .total-count { 
+      margin-top: 1rem; 
+      font-weight: bold; 
+      color: #f1f5f9;
+    }
+    .role-input { 
+      display: flex; 
+      gap: 0.5rem; 
+      margin-bottom: 0.5rem; 
+      align-items: center; 
+    }
+    .role-input input[type="text"] { 
+      flex: 2; 
+      padding: 0.5rem; 
+      border: 1px solid #475569; 
+      border-radius: 6px; 
+      background: #374151;
+      color: #f1f5f9;
+    }
+    .role-input input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    .role-input input[type="number"] { 
+      flex: 1; 
+      padding: 0.5rem; 
+      border: 1px solid #475569; 
+      border-radius: 6px; 
+      background: #374151;
+      color: #f1f5f9;
+    }
+    .role-input input[type="number"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    .remove-btn { 
+      background: #dc2626; 
+      padding: 0.25rem 0.5rem; 
+      font-size: 0.8rem; 
+      color: white;
+    }
+    .remove-btn:hover {
+      background: #b91c1c;
+    }
+    
+    /* Player roles display styles */
+    .player-roles { 
+      margin-top: 1rem; 
+    }
+    .player-role-item { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 0.75rem; 
+      margin: 0.5rem 0; 
+      background: #374151; 
+      border-radius: 8px; 
+      border-left: 4px solid #fbbf24;
+    }
+    .player-name { 
+      font-weight: 600; 
+      color: #f1f5f9;
+    }
+    .player-role { 
+      background: #fbbf24; 
+      color: #92400e; 
+      padding: 0.25rem 0.75rem; 
+      border-radius: 6px; 
+      font-weight: bold; 
+      font-size: 0.9rem;
+    }
+    .roles-header { 
+      font-weight: bold; 
+      margin-top: 1rem; 
+      margin-bottom: 0.5rem; 
+      color: #f1f5f9;
+    }
+    .no-assignments { 
+      color: #94a3b8; 
+      font-style: italic; 
+      text-align: center; 
+      padding: 1rem;
+    }
+    
+    /* Player list styling */
+    #playerList {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0;
+    }
+    #playerList li {
+      padding: 0.5rem;
+      margin: 0.25rem 0;
+      background: #374151;
+      border-radius: 6px;
+      color: #f1f5f9;
+    }
+    
+    /* Join link styling */
+    code {
+      background: #374151;
+      color: #fbbf24;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+    }
+    
+    /* Panel headers */
+    h3 {
+      margin-top: 0;
+      color: #f1f5f9;
+      font-size: 1.2rem;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +232,13 @@
     <div class="panel">
       <div>Players Joined <span class="count" id="playerCount">0</span></div>
       <ul id="playerList"></ul>
+      
+      <!-- New section for showing player roles -->
+      <div id="playerRolesSection" style="display: none;">
+        <div class="roles-header">🎭 Player Role Assignments:</div>
+        <div id="playerRolesList" class="player-roles"></div>
+      </div>
+      
       <div class="small time" id="time">Last updated: —</div>
     </div>
 
@@ -76,6 +263,8 @@
     const statusPanel = document.getElementById('statusPanel');
     const statusText = document.getElementById('statusText');
     const gameStatus = document.getElementById('gameStatus');
+    const playerRolesSection = document.getElementById('playerRolesSection');
+    const playerRolesList = document.getElementById('playerRolesList');
 
     joinLinkEl.textContent = `${location.protocol}//${location.host}/`;
 
@@ -133,6 +322,30 @@
       return collectedRoles;
     }
 
+    // New function to display player role assignments
+    function displayPlayerRoles(assignments) {
+      if (!assignments || Object.keys(assignments).length === 0) {
+        playerRolesSection.style.display = 'none';
+        return;
+      }
+
+      playerRolesSection.style.display = 'block';
+      playerRolesList.innerHTML = '';
+
+      // Sort players by name for consistent display
+      const sortedPlayers = Object.keys(assignments).sort();
+      
+      sortedPlayers.forEach(playerName => {
+        const roleDiv = document.createElement('div');
+        roleDiv.className = 'player-role-item';
+        roleDiv.innerHTML = `
+          <span class="player-name">${escapeHtml(playerName)}</span>
+          <span class="player-role">${escapeHtml(assignments[playerName])}</span>
+        `;
+        playerRolesList.appendChild(roleDiv);
+      });
+    }
+
     async function syncRoles() {
       const currentRoles = collectRoles();
       
@@ -183,6 +396,9 @@
           gameStatus.textContent = 'Started';
           statusText.textContent = 'Game started! Roles have been assigned.';
           statusPanel.className = 'status ready';
+          
+          // Refresh to show the role assignments
+          setTimeout(refresh, 500);
         } else {
           alert('Error: ' + data.error);
           console.error('Assignment error:', data);
@@ -216,6 +432,13 @@
           const li = document.createElement('li');
           li.innerHTML = escapeHtml(playerName);
           playerListEl.appendChild(li);
+        }
+        
+        // Display role assignments if game has started
+        if (data.game_started && data.assignments) {
+          displayPlayerRoles(data.assignments);
+        } else {
+          playerRolesSection.style.display = 'none';
         }
         
         // Get frontend total roles
