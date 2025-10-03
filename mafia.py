@@ -243,21 +243,21 @@ def join_room(room_name):
             if not password or password != room.get('player_password'):
                 return redirect(url_for('join_page', room_name=room_name, error='Incorrect password'))
 
-        # Check if this IP has already joined
+        # FIXED: Check if this IP has already joined - redirect to thanks with existing name
         existing_player = next((p for p in room['players'] if p.get('ip') == player_ip), None)
         if existing_player:
-            # IP already joined, redirect to thanks page with existing name
+            # IP already joined, redirect to thanks page with existing name (ignore new name input)
             resp = make_response(render_template('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip))
             resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
             resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
             return resp
 
-        # Check if name is already taken by a different IP
-        existing_names = [p['name'] for p in room['players']]
-        if name in existing_names:
+        # Check if the requested name is already taken by a different IP
+        existing_name_player = next((p for p in room['players'] if p['name'].lower() == name.lower()), None)
+        if existing_name_player:
             return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
-        # Add new player with IP
+        # Add new player with IP (only if IP hasn't joined before)
         room['players'].append({'name': name, 'ip': player_ip})
 
     resp = make_response(render_template('thanks.html', name=name, room_name=room_name, player_ip=player_ip))
