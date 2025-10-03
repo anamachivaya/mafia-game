@@ -1,0 +1,8 @@
+Changelog from main branch 
+1. (empty)
+
+Changes to be implemented in the next version
+1. Host screen gets a kill button. The host can kill a player in the game and he gets an eliminated icon next to the player in the host screen. The player gets a "You've been killed. Wait for next game" message and their role is removed
+2. When players join the lobby and are waiting for their role assignment, they can see all the other players who've joined the lobby
+3. The roles and the corresponding number on the host screen don't reset when the host resets the game. It stays persistent as long as the game room is active
+4. When the host resets the game, the players who've joined the lobby stay joined and are not kicked out. Add another "Kick all" button in the host screen to remove all the players
