@@ -113,6 +113,13 @@ def home():
                 # Verify this device is associated with this player in this room
                 player_in_room = next((p for p in room['players'] if p.get('device_id') == player_ip and p['name'] == player_name), None)
                 if player_in_room:
+                    # Check if player is eliminated
+                    is_eliminated = player_name in room.get('eliminated_players', [])
+                    
+                    if is_eliminated:
+                        # Player has been eliminated - show elimination message
+                        return make_response_with_device_cookie('eliminated.html', name=player_name, room_name=room_name, player_ip=player_ip)
+                    
                     # Device matches the player - check if game started and role assigned
                     if room.get('game_started') and player_name in room.get('assignments', {}):
                         role = room['assignments'][player_name]
@@ -337,7 +344,8 @@ def api_players(room_name):
             'count': len(room['players']),
             'password_set': room.get('player_password') is not None,
             'game_started': room.get('game_started', False),
-            'assignments': room['assignments'] if room.get('game_started') else {}
+            'assignments': room['assignments'] if room.get('game_started') else {},
+            'eliminated_players': room.get('eliminated_players', [])  # Add this line
         }
     return jsonify(data)
 
@@ -438,6 +446,7 @@ def api_reset(room_name):
         room['assignments'].clear()
         room['game_started'] = False
         room['player_password'] = None
+        room['eliminated_players'] = []  # Add this line
 
     return jsonify({'success': True})
 
@@ -495,7 +504,8 @@ def api_debug(room_name):
             'assignments': room['assignments'],
             'game_started': room['game_started'],
             'password_set': room.get('player_password') is not None,
-            'role_descriptions_loaded': len(role_descriptions)
+            'role_descriptions_loaded': len(role_descriptions),
+            'eliminated_players': room.get('eliminated_players', [])  # Add this line
         }
     return jsonify(data)
 
@@ -504,6 +514,47 @@ def api_debug(room_name):
 def api_reload_descriptions():
     load_role_descriptions()
     return jsonify({"success": True, "descriptions_loaded": len(role_descriptions)})
+
+# Add endpoint to kill a player
+@app.route('/api/rooms/<room_name>/kill-player', methods=['POST'])
+def api_kill_player(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Only host may kill players
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    player_name = request.form.get('player_name', '').strip()
+    
+    if not player_name:
+        return jsonify({'error': 'Player name is required'}), 400
+
+    with lock:
+        # Check if game has started
+        if not room.get('game_started', False):
+            return jsonify({'error': 'Game has not started yet'}), 400
+        
+        # Check if player exists in the room
+        player_exists = any(p['name'] == player_name for p in room['players'])
+        if not player_exists:
+            return jsonify({'error': 'Player not found in room'}), 404
+        
+        # Initialize eliminated_players list if it doesn't exist
+        if 'eliminated_players' not in room:
+            room['eliminated_players'] = []
+        
+        # Check if player is already eliminated
+        if player_name in room['eliminated_players']:
+            return jsonify({'error': 'Player is already eliminated'}), 400
+        
+        # Add player to eliminated list
+        room['eliminated_players'].append(player_name)
+
+    return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
 
 # ----------------- Startup helpers -----------------
 def find_free_port(preferred=5051):

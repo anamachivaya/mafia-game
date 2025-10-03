@@ -157,9 +157,17 @@
       border-radius: 8px; 
       border-left: 4px solid #fbbf24;
     }
+    .player-role-item.eliminated {
+      background: #4c1d1d;
+      border-left-color: #dc2626;
+      opacity: 0.7;
+    }
     .player-name { 
       font-weight: 600; 
       color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
     .player-role { 
       background: #fbbf24; 
@@ -168,6 +176,10 @@
       border-radius: 6px; 
       font-weight: bold; 
       font-size: 0.9rem;
+    }
+    .player-role.eliminated {
+      background: #dc2626;
+      color: white;
     }
     .roles-header { 
       font-weight: bold; 
@@ -194,6 +206,40 @@
       background: #374151;
       border-radius: 6px;
       color: #f1f5f9;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #playerList li.eliminated {
+      background: #4c1d1d;
+      opacity: 0.7;
+    }
+    
+    /* Kill button styling */
+    .kill-btn {
+      background: #dc2626;
+      color: white;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.8rem;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .kill-btn:hover {
+      background: #b91c1c;
+    }
+    .kill-btn:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      color: #94a3b8;
+    }
+    
+    /* Eliminated icon */
+    .eliminated-icon {
+      color: #dc2626;
+      font-weight: bold;
+      margin-left: 0.5rem;
     }
     
     /* Join link styling */
@@ -244,6 +290,22 @@
       font-size: 0.9rem;
       color: #94a3b8;
       margin-top: 0.5rem;
+    }
+    
+    /* Strikethrough for eliminated players */
+    .player-name.eliminated {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+
+    .player-role-item .player-name.eliminated {
+      text-decoration: line-through;
+      opacity: 0.6;
+    }
+
+    #playerList li.eliminated .player-name {
+      text-decoration: line-through;
+      opacity: 0.6;
     }
   </style>
 </head>
@@ -316,8 +378,8 @@
     const gamePasswordEl = document.getElementById('gamePassword');
     const passwordStatusEl = document.getElementById('passwordStatus');
 
-  const ROOM_NAME = '{{ room_name | e }}';
-  joinLinkEl.textContent = `${location.protocol}//${location.host}/room/${encodeURIComponent(ROOM_NAME)}`;
+    const ROOM_NAME = '{{ room_name | e }}';
+    joinLinkEl.textContent = `${location.protocol}//${location.host}/room/${encodeURIComponent(ROOM_NAME)}`;
 
     let roles = [];
     let gameStarted = false;
@@ -353,6 +415,32 @@
         passwordStatusEl.textContent = 'Error setting password';
         passwordStatusEl.style.color = '#f87171';
       });
+    }
+
+    async function killPlayer(playerName) {
+      if (!confirm(`Are you sure you want to eliminate ${playerName}?`)) {
+        return;
+      }
+
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/kill-player`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `player_name=${encodeURIComponent(playerName)}`
+        });
+        
+        const data = await resp.json();
+        
+        if (data.success) {
+          // Refresh to show updated player status
+          setTimeout(refresh, 100);
+        } else {
+          alert('Error eliminating player: ' + data.error);
+        }
+      } catch (e) {
+        console.error('Error eliminating player:', e);
+        alert('Error eliminating player: ' + e.message);
+      }
     }
 
     function addRole() {
@@ -400,8 +488,8 @@
       return collectedRoles;
     }
 
-    // New function to display player role assignments
-    function displayPlayerRoles(assignments) {
+    // Updated function to display player role assignments with elimination status
+    function displayPlayerRoles(assignments, eliminatedPlayers = []) {
       if (!assignments || Object.keys(assignments).length === 0) {
         playerRolesSection.style.display = 'none';
         return;
@@ -414,11 +502,15 @@
       const sortedPlayers = Object.keys(assignments).sort();
       
       sortedPlayers.forEach(playerName => {
+        const isEliminated = eliminatedPlayers.includes(playerName);
         const roleDiv = document.createElement('div');
-        roleDiv.className = 'player-role-item';
+        roleDiv.className = `player-role-item ${isEliminated ? 'eliminated' : ''}`;
         roleDiv.innerHTML = `
-          <span class="player-name">${escapeHtml(playerName)}</span>
-          <span class="player-role">${escapeHtml(assignments[playerName])}</span>
+          <span class="player-name ${isEliminated ? 'eliminated' : ''}">
+            ${escapeHtml(playerName)}
+            ${isEliminated ? '<span class="eliminated-icon">💀</span>' : ''}
+          </span>
+          <span class="player-role ${isEliminated ? 'eliminated' : ''}">${escapeHtml(assignments[playerName])}</span>
         `;
         playerRolesList.appendChild(roleDiv);
       });
@@ -429,14 +521,14 @@
       
       try {
         // Don't reset if game already started
-  const statusResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`);
+        const statusResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`);
         const statusData = await statusResp.json();
         if (statusData.game_started) {
           return;
         }
         
         // Clear server roles only (not players!)
-  await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/reset-roles`, { method: 'POST' });
+        await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/reset-roles`, { method: 'POST' });
         
         // Add each role
         for (const role of currentRoles) {
@@ -463,7 +555,7 @@
       await new Promise(resolve => setTimeout(resolve, 100));
       
       try {
-  const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/assign`, { method: 'POST' });
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/assign`, { method: 'POST' });
         const data = await resp.json();
         
         if (data.success) {
@@ -500,21 +592,38 @@
 
     async function refresh() {
       try {
-  const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
         const data = await resp.json();
         
         playerCountEl.textContent = data.count;
         
         playerListEl.innerHTML = '';
         for (const playerName of data.players) {
+          const isEliminated = data.eliminated_players && data.eliminated_players.includes(playerName);
           const li = document.createElement('li');
-          li.innerHTML = escapeHtml(playerName);
+          li.className = isEliminated ? 'eliminated' : '';
+          
+          const playerNameSpan = document.createElement('span');
+          playerNameSpan.className = isEliminated ? 'player-name eliminated' : 'player-name';
+          playerNameSpan.innerHTML = escapeHtml(playerName) + (isEliminated ? ' <span class="eliminated-icon">💀</span>' : '');
+          
+          const killBtn = document.createElement('button');
+          killBtn.className = 'kill-btn';
+          killBtn.textContent = isEliminated ? 'Eliminated' : 'Kill';
+          killBtn.disabled = isEliminated || !data.game_started;
+          killBtn.onclick = () => killPlayer(playerName);
+          
+          li.appendChild(playerNameSpan);
+          if (data.game_started) {
+            li.appendChild(killBtn);
+          }
+          
           playerListEl.appendChild(li);
         }
         
         // Display role assignments if game has started
         if (data.game_started && data.assignments) {
-          displayPlayerRoles(data.assignments);
+          displayPlayerRoles(data.assignments, data.eliminated_players || []);
         } else {
           playerRolesSection.style.display = 'none';
         }
