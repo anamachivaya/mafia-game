@@ -182,7 +182,8 @@ def create_room():
             'players': [],
             'roles': [],
             'assignments': {},
-            'game_started': False
+            'game_started': False,
+            'eliminated_players': []  # Add this line
         }
 
     # Set host cookie to allow host access (1 hour)
@@ -249,13 +250,19 @@ def join_page(room_name):
         if existing_player:
             # Device already joined, redirect directly to thanks page
             resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
-            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)  # Changed from ROOM_TTL
-            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)                  # Changed from ROOM_TTL
+            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)
+            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)
             return resp
+        
+        # Check if room has a player password set
+        password_required = room.get('player_password') is not None
     
     # Device hasn't joined yet, show join form
     error = request.args.get('error', '')
-    return make_response_with_device_cookie('join.html', room_name=room_name, error=error)
+    return make_response_with_device_cookie('join.html', 
+                                          room_name=room_name, 
+                                          error=error, 
+                                          password_required=password_required)  # Add this line
 
 
 @app.route('/enter', methods=['GET'])
@@ -304,11 +311,6 @@ def join_room(room_name):
     resp.set_cookie('player_name', name, max_age=COOKIE_TTL)      # Changed from ROOM_TTL
     resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)   # Changed from ROOM_TTL
     return resp
-
-@app.route("/", methods=["GET"])
-def root_redirect():
-    # redirect to home (index)
-    return redirect(url_for('home'))
 
 
 
@@ -469,6 +471,7 @@ def api_reset_roles(room_name):
 
     return jsonify({'success': True})
 
+# Update the leave function to handle room switching:
 @app.route('/leave', methods=['POST'])
 def leave():
     player_name = request.form.get('player_name')
@@ -482,6 +485,9 @@ def leave():
                 # Remove player only if device ID matches
                 room['players'][:] = [p for p in room['players'] if not (p['name'] == player_name and p.get('device_id') == player_ip)]
                 room['assignments'].pop(player_name, None)
+                # Remove from eliminated players if present
+                if 'eliminated_players' in room and player_name in room['eliminated_players']:
+                    room['eliminated_players'].remove(player_name)
 
     response = make_response(redirect(url_for('home')))
     response.set_cookie('player_name', '', expires=0)

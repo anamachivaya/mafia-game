@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>You've Been Eliminated</title>
+  <title>Eliminated - Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { 
@@ -12,56 +12,91 @@
       color: #e2e8f0; 
       min-height: 100vh;
       margin: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
-    .container {
+    .card { 
+      max-width: 520px; 
+      margin: 5vh auto; 
+      background: #1e293b; 
+      padding: 2rem; 
+      border-radius: 12px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
+      border: 1px solid #dc2626;
+    }
+    h1 { 
+      margin-top: 0; 
+      font-size: 1.6rem; 
+      color: #fca5a5;
       text-align: center;
-      max-width: 500px;
-      background: #1e293b;
-      padding: 3rem;
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      border: 1px solid #334155;
     }
-    .skull {
-      font-size: 4rem;
-      margin-bottom: 1rem;
-    }
-    h1 {
-      color: #dc2626;
-      margin-bottom: 1rem;
-      font-size: 2rem;
-    }
-    p {
-      color: #94a3b8;
-      margin-bottom: 2rem;
+    .elimination-message {
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin: 1rem 0;
+      text-align: center;
+      border: 1px solid #dc2626;
       font-size: 1.1rem;
     }
-    .btn {
-      background: #2563eb;
-      color: white;
-      padding: 0.75rem 1.5rem;
-      border: none;
-      border-radius: 8px;
-      font-size: 1rem;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
-      transition: background 0.2s ease;
+    .skull {
+      font-size: 3rem;
+      text-align: center;
+      margin: 1rem 0;
     }
-    .btn:hover {
-      background: #1d4ed8;
+    .btn { 
+      padding: 0.8rem 1.5rem; 
+      font-size: 1rem; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin-right: 0.5rem; 
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      width: 100%;
+    }
+    .btn-danger { 
+      background: #dc2626; 
+      color: white; 
+    }
+    .btn-danger:hover { 
+      background: #b91c1c; 
+    }
+    .footer { 
+      text-align: center; 
+      margin-top: 2rem; 
+      color: #94a3b8; 
+      font-size: 0.9rem; 
     }
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="card">
     <div class="skull">💀</div>
-    <h1>You've Been Eliminated!</h1>
-    <p>Sorry {{ name }}, you have been eliminated from the game. Please wait for the next round to begin.</p>
-    <a href="/" class="btn">Return to Home</a>
+    <h1>You Have Been Eliminated</h1>
+    
+    <div class="elimination-message">
+      Sorry {{ name | e }}, you have been eliminated from the game!
+    </div>
+    
+    <p style="text-align: center; color: #94a3b8;">
+      You can no longer participate in this round, but you can spectate or leave the game.
+    </p>
+    
+    <form method="post" action="{{ url_for('leave') }}">
+      <input type="hidden" name="player_name" value="{{ name }}">
+      <input type="hidden" name="room_name" value="{{ room_name }}">
+      <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
+    </form>
+  </div>
+
+  <div class="footer">
+    Created by Scissors
+    {% if player_ip %}
+    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #64748b;">
+      Your IP: {{ player_ip | e }}
+    </div>
+    {% endif %}
   </div>
 </body>
 </html>
