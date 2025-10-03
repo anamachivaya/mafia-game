@@ -3,6 +3,7 @@ import os
 import json
 from flask import Flask, request, jsonify, redirect, url_for, render_template, make_response, session
 from threading import Lock
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
@@ -555,7 +556,9 @@ def api_kill_player(room_name):
         room['eliminated_players'].append(player_name)
 
     return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
-
+@app.route('/static/<filename>')
+def static_files(filename):
+    return send_from_directory('static', filename)
 # ----------------- Startup helpers -----------------
 def find_free_port(preferred=5051):
     import socket
