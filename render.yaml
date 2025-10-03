@@ -3,7 +3,7 @@ services:
   - type: web
     name: mafia-game
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: python mafia.py
     plan: free
     envVars:
@@ -12,4 +12,4 @@ services:
       - key: PORT
         value: 10000
       - key: ROOM_TTL_SECONDS
-        value: 3600  # Changed from 900 to 3600 (1 hour)
+        value: 3600
