@@ -14,7 +14,7 @@
       margin: 0;
     }
     .card { 
-      max-width: 600px; 
+      max-width: 520px; 
       margin: 5vh auto; 
       background: #1e293b; 
       padding: 2rem; 
@@ -24,18 +24,35 @@
       position: relative;
     }
     .card.eliminated {
-      background: #4c1d1d;
       border-color: #dc2626;
+      background: #1a1a1a;
+    }
+    .status-indicator {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .status-alive {
+      background: #059669;
+      color: white;
+    }
+    .status-eliminated {
+      background: #dc2626;
+      color: white;
     }
     h1 { 
       margin-top: 0; 
-      font-size: 1.8rem; 
+      font-size: 1.6rem; 
       color: #f1f5f9;
-      text-align: center;
+      padding-right: 6rem;
     }
     h1.eliminated {
+      color: #fca5a5;
       text-decoration: line-through;
-      opacity: 0.7;
     }
     .role-badge { 
       background: #fbbf24; 
@@ -43,31 +60,35 @@
       padding: 0.75rem 1.5rem; 
       border-radius: 8px; 
       font-weight: bold; 
-      font-size: 1.2rem;
+      font-size: 1.2rem; 
+      margin: 1rem 0; 
       text-align: center;
-      margin: 1.5rem 0;
-      display: block;
     }
     .role-badge.eliminated {
       background: #dc2626;
       color: white;
     }
+    .warning { 
+      background: #451a03; 
+      color: #fbbf24; 
+      padding: 1rem; 
+      border-radius: 8px; 
+      margin: 1rem 0; 
+      border: 1px solid #92400e;
+    }
     .description { 
       background: #374151; 
-      padding: 1.5rem; 
+      padding: 1rem; 
       border-radius: 8px; 
-      margin: 1.5rem 0;
-      line-height: 1.6;
-      border-left: 4px solid #fbbf24;
+      margin: 1rem 0; 
+      color: #f1f5f9;
     }
     .description.eliminated {
-      background: #2d1b1b;
-      border-left-color: #dc2626;
-      opacity: 0.7;
+      background: #4c1d1d;
+      color: #fca5a5;
     }
     .button-group { 
-      margin-top: 2rem; 
-      text-align: center;
+      margin-top: 1.5rem; 
     }
     .btn { 
       padding: 0.8rem 1.5rem; 
@@ -75,7 +96,8 @@
       border: none; 
       border-radius: 8px; 
       cursor: pointer; 
-      margin: 0.5rem; 
+      margin-right: 0.5rem; 
+      margin-bottom: 0.5rem;
       font-weight: 600;
       transition: all 0.2s ease;
     }
@@ -93,21 +115,17 @@
     .btn-danger:hover { 
       background: #b91c1c; 
     }
+    .last-updated {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 1rem;
+      text-align: center;
+    }
     .footer { 
       text-align: center; 
       margin-top: 2rem; 
       color: #94a3b8; 
       font-size: 0.9rem; 
-    }
-    .warning {
-      background: #451a03;
-      color: #fbbf24;
-      padding: 1rem;
-      border-radius: 8px;
-      margin: 1rem 0;
-      border: 1px solid #92400e;
-      text-align: center;
-      font-weight: 600;
     }
     
     /* Elimination overlay */
@@ -117,78 +135,41 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.9);
+      background: rgba(0, 0, 0, 0.8);
       display: none;
       justify-content: center;
       align-items: center;
       z-index: 1000;
-      animation: fadeIn 0.5s ease-in;
     }
-    
     .elimination-message {
-      background: #4c1d1d;
-      border: 2px solid #dc2626;
-      border-radius: 12px;
+      background: #1e293b;
       padding: 3rem;
+      border-radius: 12px;
       text-align: center;
-      max-width: 500px;
-      margin: 2rem;
+      border: 2px solid #dc2626;
+      max-width: 400px;
     }
-    
     .elimination-title {
-      font-size: 3rem;
-      color: #dc2626;
+      font-size: 4rem;
       margin-bottom: 1rem;
     }
-    
     .elimination-text {
       font-size: 1.5rem;
-      color: #f1f5f9;
-      margin-bottom: 2rem;
+      color: #fca5a5;
+      margin-bottom: 1rem;
     }
-    
     .elimination-status {
       background: #dc2626;
       color: white;
-      padding: 1rem 2rem;
-      border-radius: 8px;
-      font-weight: bold;
-      font-size: 1.2rem;
-      margin: 1rem 0;
-      display: inline-block;
-    }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
-    /* Status indicator */
-    .status-indicator {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
       padding: 0.5rem 1rem;
       border-radius: 6px;
       font-weight: bold;
-      font-size: 0.9rem;
+      display: inline-block;
     }
     
-    .status-alive {
-      background: #059669;
-      color: white;
-    }
-    
-    .status-eliminated {
-      background: #dc2626;
-      color: white;
-    }
-    
-    .last-updated {
-      text-align: center;
-      color: #94a3b8;
-      font-size: 0.8rem;
-      margin-top: 1rem;
+    /* Eliminated styling */
+    .eliminated {
+      opacity: 0.7;
     }
   </style>
 </head>
@@ -236,7 +217,7 @@
   </div>
 
   <div class="footer">
-    Created by Scissors
+    Created by Scissors. Powered by Sunisha and Diet Coke
   </div>
 
   <script>

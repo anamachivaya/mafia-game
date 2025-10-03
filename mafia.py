@@ -125,7 +125,7 @@ def home():
                     if room.get('game_started') and player_name in room.get('assignments', {}):
                         role = room['assignments'][player_name]
                         description = get_role_description(role)
-                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, player_ip=player_ip)
+                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, room_name=room_name, player_ip=player_ip)  # Added room_name here
                     else:
                         # Game not started yet or no role assigned, show thanks page
                         return make_response_with_device_cookie('thanks.html', name=player_name, room_name=room_name, player_ip=player_ip)
@@ -562,6 +562,7 @@ def api_kill_player(room_name):
         room['eliminated_players'].append(player_name)
 
     return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
+
 @app.route('/static/<filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
