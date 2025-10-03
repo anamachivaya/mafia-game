@@ -52,14 +52,43 @@ def get_role_description(role_name):
     return f"You are a {role_name}. No specific description available for this role."
 
 # Add this helper function after the imports
-def get_client_ip():
-    # Check for forwarded headers (for proxies/load balancers)
+def get_device_id():
+    # First try to get existing device ID from cookie (most reliable)
+    device_id = request.cookies.get('device_id')
+    if device_id:
+        return device_id
+    
+    # Generate deterministic device ID based on browser fingerprint (without random components)
+    ip = request.remote_addr
     if request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
-    elif request.headers.get('X-Real-IP'):
-        return request.headers.get('X-Real-IP')
-    else:
-        return request.remote_addr
+        ip = request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    
+    # Collect browser characteristics (deterministic)
+    user_agent = request.headers.get('User-Agent', '')
+    accept_language = request.headers.get('Accept-Language', '')
+    accept_encoding = request.headers.get('Accept-Encoding', '')
+    accept = request.headers.get('Accept', '')
+    
+    # Create deterministic device fingerprint (no random components)
+    import hashlib
+    device_string = f"{ip}|{user_agent}|{accept_language}|{accept_encoding}|{accept}"
+    device_id = hashlib.md5(device_string.encode()).hexdigest()[:16]
+    
+    return device_id
+
+# Helper function to ensure device cookie is always set
+def make_response_with_device_cookie(template_or_redirect, **kwargs):
+    device_id = get_device_id()
+    
+    if hasattr(template_or_redirect, 'status_code'):  # It's already a response object
+        resp = template_or_redirect
+    elif template_or_redirect.startswith('http') or template_or_redirect.startswith('/'):  # It's a redirect
+        resp = make_response(redirect(template_or_redirect))
+    else:  # It's a template name
+        resp = make_response(render_template(template_or_redirect, **kwargs))
+    
+    resp.set_cookie('device_id', device_id, max_age=30*24*60*60)  # 30 days
+    return resp
 
 # Load descriptions on startup
 load_role_descriptions()
@@ -68,7 +97,7 @@ load_role_descriptions()
 @app.route("/", methods=["GET"])
 def home():
     error = request.args.get("error", "")
-    player_ip = get_client_ip()
+    player_ip = get_device_id()
     
     # Check if player has cookies for room and name
     player_name = request.cookies.get('player_name')
@@ -78,26 +107,26 @@ def home():
         room = get_room_or_404(room_name)
         if room:
             with lock:
-                # FIXED: Verify this IP is associated with this player in this room
-                player_in_room = next((p for p in room['players'] if p.get('ip') == player_ip and p['name'] == player_name), None)
+                # Verify this device is associated with this player in this room
+                player_in_room = next((p for p in room['players'] if p.get('device_id') == player_ip and p['name'] == player_name), None)
                 if player_in_room:
-                    # IP matches the player - check if game started and role assigned
+                    # Device matches the player - check if game started and role assigned
                     if room.get('game_started') and player_name in room.get('assignments', {}):
                         role = room['assignments'][player_name]
                         description = get_role_description(role)
-                        return render_template('role.html', name=player_name, role=role, description=description, player_ip=player_ip)
+                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, player_ip=player_ip)
                     else:
                         # Game not started yet or no role assigned, show thanks page
-                        return render_template('thanks.html', name=player_name, room_name=room_name, player_ip=player_ip)
+                        return make_response_with_device_cookie('thanks.html', name=player_name, room_name=room_name, player_ip=player_ip)
                 else:
-                    # IP doesn't match or player not in room - clear invalid cookies
-                    response = make_response(render_template('home.html', error="Session invalid - please rejoin the room"))
+                    # Device doesn't match or player not in room - clear invalid cookies
+                    response = make_response_with_device_cookie('home.html', error="Session invalid - please rejoin the room")
                     response.set_cookie('player_name', '', expires=0)
                     response.set_cookie('room_name', '', expires=0)
                     return response
 
     # Default landing page
-    return render_template('home.html', error=error)
+    return make_response_with_device_cookie('home.html', error=error)
 
 
 def _room_expired(room):
@@ -201,21 +230,21 @@ def join_page(room_name):
     if not room:
         return 'Room not found or expired', 404
     
-    player_ip = get_client_ip()
+    player_ip = get_device_id()
     
     with lock:
-        # Check if this IP has already joined this room
-        existing_player = next((p for p in room['players'] if p.get('ip') == player_ip), None)
+        # Check if this device has already joined this room
+        existing_player = next((p for p in room['players'] if p.get('device_id') == player_ip), None)
         if existing_player:
-            # IP already joined, redirect directly to thanks page
-            resp = make_response(render_template('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip))
+            # Device already joined, redirect directly to thanks page
+            resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
             resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
             resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
             return resp
     
-    # IP hasn't joined yet, show join form
+    # Device hasn't joined yet, show join form
     error = request.args.get('error', '')
-    return render_template('join.html', room_name=room_name, error=error)
+    return make_response_with_device_cookie('join.html', room_name=room_name, error=error)
 
 
 @app.route('/enter', methods=['GET'])
@@ -232,7 +261,7 @@ def join_room(room_name):
 
     name = request.form.get('name', '').strip()
     password = request.form.get('password', '').strip()
-    player_ip = get_client_ip()
+    player_ip = get_device_id()
     
     if not name:
         return redirect(url_for('join_page', room_name=room_name, error='Name is required'))
@@ -243,24 +272,24 @@ def join_room(room_name):
             if not password or password != room.get('player_password'):
                 return redirect(url_for('join_page', room_name=room_name, error='Incorrect password'))
 
-        # FIXED: Check if this IP has already joined - redirect to thanks with existing name
-        existing_player = next((p for p in room['players'] if p.get('ip') == player_ip), None)
+        # Check if this device has already joined - redirect to thanks with existing name
+        existing_player = next((p for p in room['players'] if p.get('device_id') == player_ip), None)
         if existing_player:
-            # IP already joined, redirect to thanks page with existing name (ignore new name input)
-            resp = make_response(render_template('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip))
+            # Device already joined, redirect to thanks page with existing name (ignore new name input)
+            resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
             resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
             resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
             return resp
 
-        # Check if the requested name is already taken by a different IP
+        # Check if the requested name is already taken by a different device
         existing_name_player = next((p for p in room['players'] if p['name'].lower() == name.lower()), None)
         if existing_name_player:
             return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
-        # Add new player with IP (only if IP hasn't joined before)
-        room['players'].append({'name': name, 'ip': player_ip})
+        # Add new player with device ID (only if device hasn't joined before)
+        room['players'].append({'name': name, 'device_id': player_ip})
 
-    resp = make_response(render_template('thanks.html', name=name, room_name=room_name, player_ip=player_ip))
+    resp = make_response_with_device_cookie('thanks.html', name=name, room_name=room_name, player_ip=player_ip)
     resp.set_cookie('player_name', name, max_age=ROOM_TTL)
     resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
     return resp
@@ -431,14 +460,14 @@ def api_reset_roles(room_name):
 def leave():
     player_name = request.form.get('player_name')
     room_name = request.form.get('room_name') or request.cookies.get('room_name')
-    player_ip = get_client_ip()
+    player_ip = get_device_id()
 
     if player_name and room_name:
         with lock:
             room = rooms.get(room_name)
             if room:
-                # Remove player only if IP matches
-                room['players'][:] = [p for p in room['players'] if not (p['name'] == player_name and p.get('ip') == player_ip)]
+                # Remove player only if device ID matches
+                room['players'][:] = [p for p in room['players'] if not (p['name'] == player_name and p.get('device_id') == player_ip)]
                 room['assignments'].pop(player_name, None)
 
     response = make_response(redirect(url_for('home')))
