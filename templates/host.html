@@ -316,7 +316,8 @@
     const gamePasswordEl = document.getElementById('gamePassword');
     const passwordStatusEl = document.getElementById('passwordStatus');
 
-    joinLinkEl.textContent = `${location.protocol}//${location.host}/`;
+  const ROOM_NAME = '{{ room_name | e }}';
+  joinLinkEl.textContent = `${location.protocol}//${location.host}/room/${encodeURIComponent(ROOM_NAME)}`;
 
     let roles = [];
     let gameStarted = false;
@@ -330,7 +331,7 @@
     function setPassword() {
       const password = gamePasswordEl.value;
       
-      fetch('/api/set-password', {
+      fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/set-player-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: `password=${encodeURIComponent(password)}`
@@ -428,18 +429,18 @@
       
       try {
         // Don't reset if game already started
-        const statusResp = await fetch('/api/players');
+  const statusResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`);
         const statusData = await statusResp.json();
         if (statusData.game_started) {
           return;
         }
         
         // Clear server roles only (not players!)
-        await fetch('/api/reset-roles', { method: 'POST' });
+  await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/reset-roles`, { method: 'POST' });
         
         // Add each role
         for (const role of currentRoles) {
-          const resp = await fetch('/api/roles', {
+          const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/roles`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `role_name=${encodeURIComponent(role.name)}&role_count=${role.count}`
@@ -462,7 +463,7 @@
       await new Promise(resolve => setTimeout(resolve, 100));
       
       try {
-        const resp = await fetch('/api/assign', { method: 'POST' });
+  const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/assign`, { method: 'POST' });
         const data = await resp.json();
         
         if (data.success) {
@@ -489,7 +490,7 @@
     async function resetGame() {
       if (confirm('Are you sure you want to reset the game? This will clear all players and roles.')) {
         try {
-          await fetch('/api/reset', { method: 'POST' });
+          await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/reset`, { method: 'POST' });
           location.reload();
         } catch (e) {
           alert('Error resetting game');
@@ -499,7 +500,7 @@
 
     async function refresh() {
       try {
-        const resp = await fetch('/api/players', { cache: 'no-store' });
+  const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
         const data = await resp.json();
         
         playerCountEl.textContent = data.count;

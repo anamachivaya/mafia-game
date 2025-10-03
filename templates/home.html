@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Mafia Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#f7fafc; color:#222; text-align: center; }
+    .container { max-width: 520px; margin: 10vh auto; }
+    h1 { font-size: 2.5rem; color: #1e293b; }
+    p { color: #475569; margin-bottom: 2rem; }
+    .btn { display: inline-block; text-decoration: none; padding: 1rem 2rem; font-size: 1.1rem; border-radius: 10px; font-weight: 600; transition: all 0.2s ease; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1e40af; }
+    .btn-secondary { background: #e2e8f0; color: #1e293b; margin-left: 1rem; }
+    .btn-secondary:hover { background: #cbd5e1; }
+    .footer { position: absolute; bottom: 2rem; width: 100%; text-align: center; color: #94a3b8; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Mafia Game</h1>
+    <p>The classic party game of deception and deduction, now online.</p>
+    <div>
+      <a href="{{ url_for('create_room') }}" class="btn btn-primary">Create a Game Room</a>
+      <a href="{{ url_for('host_login') }}" class="btn btn-secondary">Host Login</a>
+    </div>
+    <div style="margin-top:1rem;">
+      <form method="get" action="{{ url_for('join_page', room_name='') }}" onsubmit="event.preventDefault(); window.location.href='/room/' + encodeURIComponent(document.getElementById('room_input').value)">
+        <input id="room_input" type="text" placeholder="Enter room name to join..." style="padding:0.6rem;border-radius:8px;border:1px solid #cbd5e1;width:60%" required />
+        <button class="btn btn-primary" style="margin-left:0.5rem;">Go</button>
+      </form>
+    </div>
+  </div>
+  <div class="footer">
+    Created by Scissors
+  </div>
+</body>
+</html>

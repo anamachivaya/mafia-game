@@ -8,13 +8,16 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
 # In-memory store (resets when the server restarts)
-players = []  # List of {"name": "player_name", "session_id": "session_id"}
-roles = []    # List of {"name": "role_name", "count": number}
-assignments = {}  # Dictionary mapping player names to roles
-game_started = False
-game_password = None  # Store the game password
+# rooms: map room_name -> {
+#   host_password, player_password, host_token, created_at,
+#   players: [{name, session_id}], roles: [{name,count}], assignments: {player: role}, game_started
+# }
+rooms = {}
 role_descriptions = {}  # Store role descriptions from JSON
 lock = Lock()
+
+# Room lifetime (seconds)
+ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 15 * 60))  # default 15 minutes
 
 # Load role descriptions from JSON file
 def load_role_descriptions():
@@ -55,185 +58,358 @@ load_role_descriptions()
 @app.route("/", methods=["GET"])
 def home():
     error = request.args.get("error", "")
-    
-    # Check if player already has a role assigned
-    player_name = request.cookies.get("player_name")
-    if player_name and player_name in assignments:
-        role = assignments[player_name]
-        description = get_role_description(role)
-        return render_template("role.html", name=player_name, role=role, description=description)
-    
-    return render_template("join.html", error=error)
+    # If player has cookies for room and name, try to show assigned role
+    player_name = request.cookies.get('player_name')
+    room_name = request.cookies.get('room_name')
+    if player_name and room_name:
+        room = get_room_or_404(room_name)
+        if room and room.get('game_started') and player_name in room.get('assignments', {}):
+            role = room['assignments'][player_name]
+            description = get_role_description(role)
+            return render_template('role.html', name=player_name, role=role, description=description)
 
-@app.route("/join", methods=["POST"])
-def join():
-    name = request.form.get("name", "").strip()
-    password = request.form.get("password", "").strip()
-    
+    # Default landing page
+    return render_template('home.html', error=error)
+
+
+def _room_expired(room):
+    import time
+    return (time.time() - room.get('created_at', 0)) > ROOM_TTL
+
+
+def get_room_or_404(room_name):
+    with lock:
+        room = rooms.get(room_name)
+        if not room:
+            return None
+        if _room_expired(room):
+            # destroy room
+            rooms.pop(room_name, None)
+            return None
+        return room
+
+@app.route("/create_room", methods=["GET", "POST"])
+def create_room():
+    # Host creates a room with a host password
+    if request.method == 'GET':
+        return render_template('create_room.html')
+
+    room_name = request.form.get('room_name', '').strip()
+    host_password = request.form.get('host_password', '').strip()
+
+    if not room_name:
+        return render_template('create_room.html', error='Room name is required')
+
+    with lock:
+        if room_name in rooms:
+            return render_template('create_room.html', error='Room already exists')
+
+        import time, secrets
+        host_token = secrets.token_urlsafe(16)
+        rooms[room_name] = {
+            'host_password': host_password,
+            'player_password': None,
+            'host_token': host_token,
+            'created_at': time.time(),
+            'players': [],
+            'roles': [],
+            'assignments': {},
+            'game_started': False
+        }
+
+    # Set host cookie to allow host access (short lived)
+    resp = make_response(redirect(url_for('host_dashboard', room_name=room_name)))
+    resp.set_cookie('host_token', host_token, max_age=ROOM_TTL)
+    resp.set_cookie('host_room', room_name, max_age=ROOM_TTL)
+    return resp
+
+
+@app.route('/host_login', methods=['GET', 'POST'])
+def host_login():
+    if request.method == 'GET':
+        return render_template('host_login.html')
+
+    room_name = request.form.get('room_name', '').strip()
+    host_password = request.form.get('host_password', '').strip()
+
+    if not room_name:
+        return render_template('host_login.html', error='Room name is required')
+
+    with lock:
+        room = rooms.get(room_name)
+        if not room or _room_expired(room):
+            return render_template('host_login.html', error='Room not found or expired')
+        if room.get('host_password') != host_password:
+            return render_template('host_login.html', error='Incorrect password')
+
+        # Issue host token
+        host_token = room.get('host_token')
+
+    resp = make_response(redirect(url_for('host_dashboard', room_name=room_name)))
+    resp.set_cookie('host_token', host_token, max_age=ROOM_TTL)
+    resp.set_cookie('host_room', room_name, max_age=ROOM_TTL)
+    return resp
+
+
+@app.route('/host/<room_name>', methods=['GET'])
+def host_dashboard(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return 'Room not found or expired', 404
+
+    # Validate host token cookie
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        # Redirect to host login
+        return redirect(url_for('host_login'))
+
+    return render_template('host.html', room_name=room_name)
+
+
+@app.route('/room/<room_name>', methods=['GET'])
+def join_page(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return 'Room not found or expired', 404
+    error = request.args.get('error', '')
+    return render_template('join.html', room_name=room_name, error=error)
+
+
+@app.route('/enter', methods=['GET'])
+def enter_room():
+    # simple helper page to enter a room name
+    return render_template('enter_room.html')
+
+
+@app.route('/room/<room_name>/join', methods=['POST'])
+def join_room(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return redirect(url_for('home', error='Room not found or expired'))
+
+    name = request.form.get('name', '').strip()
+    password = request.form.get('password', '').strip()
     if not name:
-        return redirect(url_for("home", error="Name is required"))
-    
+        return redirect(url_for('join_page', room_name=room_name, error='Name is required'))
+
     with lock:
-        # Check if game has a password set
-        if game_password is not None:
-            if not password:
-                return redirect(url_for("home", error="Password is required"))
-            if password != game_password:
-                return redirect(url_for("home", error="Incorrect password"))
-        
-        # Check if name is already taken
-        existing_names = [p["name"] for p in players]
+        # Check player password if set
+        if room.get('player_password'):
+            if not password or password != room.get('player_password'):
+                return redirect(url_for('join_page', room_name=room_name, error='Incorrect password'))
+
+        existing_names = [p['name'] for p in room['players']]
         if name in existing_names:
-            return redirect(url_for("home", error="Name already taken"))
-        
-        # Add player
-        session_id = request.cookies.get("session_id", os.urandom(16).hex())
-        players.append({"name": name, "session_id": session_id})
-    
-    response = make_response(render_template("thanks.html", name=name))
-    response.set_cookie("player_name", name, max_age=3600)
-    response.set_cookie("session_id", session_id, max_age=3600)
-    return response
+            return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
-@app.route("/host", methods=["GET"])
-def host():
-    return render_template("host.html")
+        session_id = request.cookies.get('session_id', os.urandom(16).hex())
+        room['players'].append({'name': name, 'session_id': session_id})
 
-@app.route("/api/set-password", methods=["POST"])
-def api_set_password():
-    password = request.form.get("password", "").strip()
-    
+    resp = make_response(render_template('thanks.html', name=name, room_name=room_name))
+    resp.set_cookie('player_name', name, max_age=ROOM_TTL)
+    resp.set_cookie('session_id', session_id, max_age=ROOM_TTL)
+    resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+    return resp
+
+@app.route("/", methods=["GET"])
+def root_redirect():
+    # redirect to home (index)
+    return redirect(url_for('home'))
+
+
+
+@app.route('/api/rooms/<room_name>/set-player-password', methods=['POST'])
+def api_set_player_password(room_name):
+    # Only host may set player password
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    password = request.form.get('password', '').strip()
     with lock:
-        global game_password
         if password:
-            game_password = password
+            room['player_password'] = password
         else:
-            game_password = None
-    
-    return jsonify({"success": True, "password_set": game_password is not None})
+            room['player_password'] = None
 
-@app.route("/api/players", methods=["GET"])
-def api_players():
+    return jsonify({'success': True, 'password_set': room['player_password'] is not None})
+
+@app.route('/api/rooms/<room_name>/players', methods=['GET'])
+def api_players(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
     with lock:
         data = {
-            "players": [p["name"] for p in players],
-            "count": len(players),
-            "password_set": game_password is not None,
-            "game_started": game_started,
-            "assignments": assignments if game_started else {}
+            'players': [p['name'] for p in room['players']],
+            'count': len(room['players']),
+            'password_set': room.get('player_password') is not None,
+            'game_started': room.get('game_started', False),
+            'assignments': room['assignments'] if room.get('game_started') else {}
         }
     return jsonify(data)
 
-@app.route("/api/roles", methods=["POST"])
-def api_add_role():
-    role_name = request.form.get("role_name", "").strip()
-    role_count = request.form.get("role_count", "1")
-    
+@app.route('/api/rooms/<room_name>/roles', methods=['POST'])
+def api_add_role(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # only host may add roles
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    role_name = request.form.get('role_name', '').strip()
+    role_count = request.form.get('role_count', '1')
+
     if not role_name:
-        return jsonify({"error": "Role name is required"}), 400
-    
+        return jsonify({'error': 'Role name is required'}), 400
+
     try:
         count = int(role_count)
         if count < 1:
-            return jsonify({"error": "Role count must be at least 1"}), 400
+            return jsonify({'error': 'Role count must be at least 1'}), 400
     except ValueError:
-        return jsonify({"error": "Invalid role count"}), 400
-    
-    with lock:
-        roles.append({"name": role_name, "count": count})
-    
-    return jsonify({"success": True})
+        return jsonify({'error': 'Invalid role count'}), 400
 
-@app.route("/api/roles/<int:index>", methods=["DELETE"])
-def api_remove_role(index):
     with lock:
-        if 0 <= index < len(roles):
-            roles.pop(index)
-            return jsonify({"success": True})
-    
-    return jsonify({"error": "Invalid role index"}), 400
+        room['roles'].append({'name': role_name, 'count': count})
 
-@app.route("/api/assign", methods=["POST"])
-def api_assign_roles():
+    return jsonify({'success': True})
+
+@app.route('/api/rooms/<room_name>/roles/<int:index>', methods=['DELETE'])
+def api_remove_role(room_name, index):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        if 0 <= index < len(room['roles']):
+            room['roles'].pop(index)
+            return jsonify({'success': True})
+
+    return jsonify({'error': 'Invalid role index'}), 400
+
+@app.route('/api/rooms/<room_name>/assign', methods=['POST'])
+def api_assign_roles(room_name):
     import random
-    
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
     with lock:
-        global game_started
-        
-        # Calculate total roles needed
-        total_roles = sum(role["count"] for role in roles)
-        if total_roles != len(players):
-            return jsonify({"error": f"Total roles ({total_roles}) must equal number of players ({len(players)})"}), 400
-        
-        # Create role list
+        total_roles = sum(r['count'] for r in room['roles'])
+        if total_roles != len(room['players']):
+            return jsonify({'error': f'Total roles ({total_roles}) must equal number of players ({len(room["players"])})'}), 400
+
         role_list = []
-        for role in roles:
-            role_list.extend([role["name"]] * role["count"])
-        
-        # Shuffle and assign
+        for role in room['roles']:
+            role_list.extend([role['name']] * role['count'])
+
         random.shuffle(role_list)
-        player_names = [p["name"] for p in players]
-        
-        assignments.clear()
+        player_names = [p['name'] for p in room['players']]
+
+        room['assignments'].clear()
         for i, player_name in enumerate(player_names):
-            assignments[player_name] = role_list[i]
-        
-        game_started = True
-    
-    return jsonify({"success": True})
+            room['assignments'][player_name] = role_list[i]
 
-@app.route("/api/reset", methods=["POST"])
-def api_reset():
+        room['game_started'] = True
+
+    return jsonify({'success': True})
+
+@app.route('/api/rooms/<room_name>/reset', methods=['POST'])
+def api_reset(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
     with lock:
-        global game_started, game_password
-        players.clear()
-        roles.clear()
-        assignments.clear()
-        game_started = False
-        game_password = None
-    
-    return jsonify({"success": True})
+        room['players'].clear()
+        room['roles'].clear()
+        room['assignments'].clear()
+        room['game_started'] = False
+        room['player_password'] = None
 
-@app.route("/api/reset-roles", methods=["POST"])
-def api_reset_roles():
+    return jsonify({'success': True})
+
+@app.route('/api/rooms/<room_name>/reset-roles', methods=['POST'])
+def api_reset_roles(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
     with lock:
-        global game_started
-        roles.clear()
-        assignments.clear()
-        game_started = False
-    
-    return jsonify({"success": True})
+        room['roles'].clear()
+        room['assignments'].clear()
+        room['game_started'] = False
 
-@app.route("/leave", methods=["POST"])
+    return jsonify({'success': True})
+
+@app.route('/leave', methods=['POST'])
 def leave():
-    player_name = request.form.get("player_name")
-    
-    if player_name:
+    player_name = request.form.get('player_name')
+    room_name = request.form.get('room_name') or request.cookies.get('room_name')
+
+    if player_name and room_name:
         with lock:
-            # Remove from players list
-            players[:] = [p for p in players if p["name"] != player_name]
-            # Remove from assignments if present
-            assignments.pop(player_name, None)
-    
-    response = make_response(redirect(url_for("home")))
-    response.set_cookie("player_name", "", expires=0)
-    response.set_cookie("session_id", "", expires=0)
+            room = rooms.get(room_name)
+            if room:
+                room['players'][:] = [p for p in room['players'] if p['name'] != player_name]
+                room['assignments'].pop(player_name, None)
+
+    response = make_response(redirect(url_for('home')))
+    response.set_cookie('player_name', '', expires=0)
+    response.set_cookie('session_id', '', expires=0)
+    response.set_cookie('room_name', '', expires=0)
     return response
 
 @app.route("/healthz")
 def health():
     return "ok", 200
 
-@app.route("/api/debug", methods=["GET"])
-def api_debug():
+@app.route('/api/rooms/<room_name>/debug', methods=['GET'])
+def api_debug(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
     with lock:
         data = {
-            "players": players,
-            "roles": roles,
-            "assignments": assignments,
-            "game_started": game_started,
-            "password_set": game_password is not None,
-            "role_descriptions_loaded": len(role_descriptions)
+            'players': room['players'],
+            'roles': room['roles'],
+            'assignments': room['assignments'],
+            'game_started': room['game_started'],
+            'password_set': room.get('player_password') is not None,
+            'role_descriptions_loaded': len(role_descriptions)
         }
     return jsonify(data)
 

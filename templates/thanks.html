@@ -163,7 +163,7 @@
 
     async function updateGameStatus() {
       try {
-        const response = await fetch('/api/players', { cache: 'no-store' });
+  const response = await fetch(`/api/rooms/{{ room_name | e }}/players`, { cache: 'no-store' });
         const data = await response.json();
         
         const now = new Date();

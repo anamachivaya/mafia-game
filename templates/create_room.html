@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Join Mafia Game</title>
+  <title>Create a Game Room</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#f7fafc; color:#222; }
@@ -12,32 +12,26 @@
     input[type="text"], input[type="password"] { width: 100%; padding: 0.8rem; font-size: 1rem; border: 1px solid #cbd5e1; border-radius: 10px; box-sizing: border-box; }
     button { margin-top: 1rem; padding: 0.8rem 1.1rem; font-size: 1rem; background: #2563eb; color: white; border: none; border-radius: 10px; cursor: pointer; width: 100%; }
     button:hover { background:#1e4fd4; }
-    .note { margin-top: 0.75rem; color:#64748b; font-size: 0.9rem; }
     .error { color:#b91c1c; margin-top: 0.75rem; }
     .footer { text-align: center; margin-top: 2rem; color: #64748b; font-size: 0.9rem; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Join Mafia Game</h1>
-
-    <form method="post" action="{{ url_for('join_room', room_name=room_name) }}">
-      <label for="name">Your name</label>
-      <input id="name" name="name" type="text" placeholder="Enter your name..." maxlength="50" required />
+    <h1>Create a Game Room</h1>
+    <form method="post" action="{{ url_for('create_room') }}">
+      <label for="room_name">Room Name</label>
+      <input id="room_name" name="room_name" type="text" placeholder="Enter a room name..." maxlength="50" required />
       
-      <label for="password">Game password</label>
-      <input id="password" name="password" type="password" placeholder="Enter game password..." maxlength="100" />
+      <label for="host_password">Host Password</label>
+      <input id="host_password" name="host_password" type="password" placeholder="Create a password for the host..." maxlength="100" required />
       
-      <button type="submit">Join Game</button>
+      <button type="submit">Create Room</button>
     </form>
-
     {% if error %}
       <div class="error">{{ error | e }}</div>
     {% endif %}
-
-    <p class="note">After you submit, wait for the host to assign roles.</p>
   </div>
-
   <div class="footer">
     Created by Scissors
   </div>
