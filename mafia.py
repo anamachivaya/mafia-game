@@ -58,15 +58,21 @@ load_role_descriptions()
 @app.route("/", methods=["GET"])
 def home():
     error = request.args.get("error", "")
-    # If player has cookies for room and name, try to show assigned role
+    player_ip = request.remote_addr
+    
+    # Check if player has cookies for room and name
     player_name = request.cookies.get('player_name')
     room_name = request.cookies.get('room_name')
+    
     if player_name and room_name:
         room = get_room_or_404(room_name)
-        if room and room.get('game_started') and player_name in room.get('assignments', {}):
-            role = room['assignments'][player_name]
-            description = get_role_description(role)
-            return render_template('role.html', name=player_name, role=role, description=description)
+        if room:
+            # Verify this IP is associated with this player in this room
+            player_in_room = next((p for p in room['players'] if p.get('ip') == player_ip and p['name'] == player_name), None)
+            if player_in_room and room.get('game_started') and player_name in room.get('assignments', {}):
+                role = room['assignments'][player_name]
+                description = get_role_description(role)
+                return render_template('role.html', name=player_name, role=role, description=description)
 
     # Default landing page
     return render_template('home.html', error=error)
@@ -172,6 +178,20 @@ def join_page(room_name):
     room = get_room_or_404(room_name)
     if not room:
         return 'Room not found or expired', 404
+    
+    player_ip = request.remote_addr
+    
+    with lock:
+        # Check if this IP has already joined this room
+        existing_player = next((p for p in room['players'] if p.get('ip') == player_ip), None)
+        if existing_player:
+            # IP already joined, redirect directly to thanks page
+            resp = make_response(render_template('thanks.html', name=existing_player['name'], room_name=room_name))
+            resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
+            resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+            return resp
+    
+    # IP hasn't joined yet, show join form
     error = request.args.get('error', '')
     return render_template('join.html', room_name=room_name, error=error)
 
@@ -190,6 +210,8 @@ def join_room(room_name):
 
     name = request.form.get('name', '').strip()
     password = request.form.get('password', '').strip()
+    player_ip = request.remote_addr
+    
     if not name:
         return redirect(url_for('join_page', room_name=room_name, error='Name is required'))
 
@@ -199,16 +221,25 @@ def join_room(room_name):
             if not password or password != room.get('player_password'):
                 return redirect(url_for('join_page', room_name=room_name, error='Incorrect password'))
 
+        # Check if this IP has already joined
+        existing_player = next((p for p in room['players'] if p.get('ip') == player_ip), None)
+        if existing_player:
+            # IP already joined, redirect to thanks page with existing name
+            resp = make_response(render_template('thanks.html', name=existing_player['name'], room_name=room_name))
+            resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
+            resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+            return resp
+
+        # Check if name is already taken by a different IP
         existing_names = [p['name'] for p in room['players']]
         if name in existing_names:
             return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
-        session_id = request.cookies.get('session_id', os.urandom(16).hex())
-        room['players'].append({'name': name, 'session_id': session_id})
+        # Add new player with IP
+        room['players'].append({'name': name, 'ip': player_ip})
 
     resp = make_response(render_template('thanks.html', name=name, room_name=room_name))
     resp.set_cookie('player_name', name, max_age=ROOM_TTL)
-    resp.set_cookie('session_id', session_id, max_age=ROOM_TTL)
     resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
     return resp
 
@@ -378,17 +409,18 @@ def api_reset_roles(room_name):
 def leave():
     player_name = request.form.get('player_name')
     room_name = request.form.get('room_name') or request.cookies.get('room_name')
+    player_ip = request.remote_addr
 
     if player_name and room_name:
         with lock:
             room = rooms.get(room_name)
             if room:
-                room['players'][:] = [p for p in room['players'] if p['name'] != player_name]
+                # Remove player only if IP matches
+                room['players'][:] = [p for p in room['players'] if not (p['name'] == player_name and p.get('ip') == player_ip)]
                 room['assignments'].pop(player_name, None)
 
     response = make_response(redirect(url_for('home')))
     response.set_cookie('player_name', '', expires=0)
-    response.set_cookie('session_id', '', expires=0)
     response.set_cookie('room_name', '', expires=0)
     return response
 

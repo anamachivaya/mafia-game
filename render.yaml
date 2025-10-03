@@ -5,6 +5,11 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python mafia.py
+    plan: free
     envVars:
+      - key: SECRET_KEY
+        generateValue: true
       - key: PORT
         value: 10000
+      - key: ROOM_TTL_SECONDS
+        value: 900  # 15 minutes

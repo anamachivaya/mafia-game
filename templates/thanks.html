@@ -134,11 +134,12 @@
       
       <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
         <input type="hidden" name="player_name" value="{{ name }}">
+        {% if room_name %}
+        <input type="hidden" name="room_name" value="{{ room_name }}">
+        {% endif %}
         <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
       </form>
     </div>
-
-    <p><a href="{{ url_for('home') }}">Join as someone else</a></p>
   </div>
 
   <div class="footer">
@@ -163,7 +164,15 @@
 
     async function updateGameStatus() {
       try {
-  const response = await fetch(`/api/rooms/{{ room_name | e }}/players`, { cache: 'no-store' });
+        // Use the correct API endpoint - either room-based or global
+        const roomName = "{{ room_name | e }}";
+        let apiUrl;
+        if (roomName) {
+          apiUrl = `/api/rooms/${roomName}/players`;
+        } else {
+          apiUrl = '/api/players';
+        }
+        const response = await fetch(apiUrl, { cache: 'no-store' });
         const data = await response.json();
         
         const now = new Date();
