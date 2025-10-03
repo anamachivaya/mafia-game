@@ -16,6 +16,7 @@
     .card { 
       max-width: 520px; 
       margin: 5vh auto; 
+<<<<<<< Updated upstream
       background: #1e293b; 
       padding: 2rem; 
       border-radius: 12px; 
@@ -26,6 +27,20 @@
       margin-top: 0; 
       font-size: 1.6rem; 
       color: #f1f5f9;
+=======
+      background: rgba(15, 23, 42, 0.95); 
+      padding: 2rem; 
+      border-radius: 12px; 
+      box-shadow: 0 15px 40px rgba(0,0,0,0.4); 
+      border: 1px solid #334155;
+      backdrop-filter: blur(15px);
+    }
+    h1 { 
+      margin-top: 0; 
+      font-size: 1.8rem; 
+      color: #f1f5f9;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+>>>>>>> Stashed changes
     }
     label { 
       display: block; 
@@ -38,16 +53,29 @@
       padding: 0.8rem; 
       font-size: 1rem; 
       border: 1px solid #475569; 
+<<<<<<< Updated upstream
       border-radius: 8px; 
       background: #374151;
       color: #f1f5f9;
       box-sizing: border-box; 
+=======
+      border-radius: 10px; 
+      box-sizing: border-box; 
+      background: #374151;
+      color: #f1f5f9;
+>>>>>>> Stashed changes
     }
     input[type="text"]:focus, input[type="password"]:focus {
       outline: none;
       border-color: #2563eb;
       box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
     }
+<<<<<<< Updated upstream
+=======
+    input[type="text"]::placeholder, input[type="password"]::placeholder {
+      color: #94a3b8;
+    }
+>>>>>>> Stashed changes
     button { 
       margin-top: 1rem; 
       padding: 0.8rem 1.1rem; 
@@ -55,6 +83,7 @@
       background: #2563eb; 
       color: white; 
       border: none; 
+<<<<<<< Updated upstream
       border-radius: 8px; 
       cursor: pointer; 
       width: 100%; 
@@ -62,6 +91,18 @@
     }
     button:hover { 
       background: #1e40af; 
+=======
+      border-radius: 10px; 
+      cursor: pointer; 
+      width: 100%; 
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    button:hover { 
+      background: #1e40af; 
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(37, 99, 235, 0.3);
+>>>>>>> Stashed changes
     }
     .note { 
       margin-top: 0.75rem; 
@@ -69,18 +110,32 @@
       font-size: 0.9rem; 
     }
     .error { 
+<<<<<<< Updated upstream
       color: #fca5a5; 
       background: #7f1d1d;
       padding: 1rem;
       border-radius: 8px;
       margin-bottom: 1rem;
+=======
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+>>>>>>> Stashed changes
       border: 1px solid #dc2626;
     }
     .footer { 
       text-align: center; 
       margin-top: 2rem; 
+<<<<<<< Updated upstream
       color: #94a3b8; 
       font-size: 0.9rem; 
+=======
+      color: #f1f5f9; 
+      font-size: 0.9rem; 
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+>>>>>>> Stashed changes
     }
   </style>
 </head>
@@ -102,10 +157,23 @@
       
       <button type="submit">Join Game</button>
     </form>
+<<<<<<< Updated upstream
     
     <div class="note">
       Room: <strong>{{ room_name | e }}</strong>
     </div>
+=======
+
+    {% if error %}
+      <div class="error">{{ error | e }}</div>
+    {% endif %}
+
+    <p class="note">After you submit, wait for the host to assign roles.</p>
+  </div>
+
+  <div class="footer">
+    <b style="color: #7f1d1d; font-size: large;">Created by Scissors</b>
+>>>>>>> Stashed changes
   </div>
   
   <div class="footer">Created by Scissors</div>

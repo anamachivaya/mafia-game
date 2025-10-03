@@ -488,7 +488,7 @@
       return collectedRoles;
     }
 
-    // Updated function to display player role assignments with elimination status
+    // Updated function to display player role assignments with kill buttons
     function displayPlayerRoles(assignments, eliminatedPlayers = []) {
       if (!assignments || Object.keys(assignments).length === 0) {
         playerRolesSection.style.display = 'none';
@@ -506,11 +506,16 @@
         const roleDiv = document.createElement('div');
         roleDiv.className = `player-role-item ${isEliminated ? 'eliminated' : ''}`;
         roleDiv.innerHTML = `
-          <span class="player-name ${isEliminated ? 'eliminated' : ''}">
-            ${escapeHtml(playerName)}
-            ${isEliminated ? '<span class="eliminated-icon">💀</span>' : ''}
-          </span>
-          <span class="player-role ${isEliminated ? 'eliminated' : ''}">${escapeHtml(assignments[playerName])}</span>
+          <div style="display: flex; align-items: center; gap: 1rem; width: 100%;">
+            <span class="player-name ${isEliminated ? 'eliminated' : ''}">
+              ${escapeHtml(playerName)}
+              ${isEliminated ? '<span class="eliminated-icon">💀</span>' : ''}
+            </span>
+            <span class="player-role ${isEliminated ? 'eliminated' : ''}">${escapeHtml(assignments[playerName])}</span>
+            <button class="kill-btn" ${isEliminated ? 'disabled' : ''} onclick="killPlayer('${escapeHtml(playerName)}')" style="margin-left: auto;">
+              ${isEliminated ? 'Eliminated' : 'Kill'}
+            </button>
+          </div>
         `;
         playerRolesList.appendChild(roleDiv);
       });
@@ -607,16 +612,8 @@
           playerNameSpan.className = isEliminated ? 'player-name eliminated' : 'player-name';
           playerNameSpan.innerHTML = escapeHtml(playerName) + (isEliminated ? ' <span class="eliminated-icon">💀</span>' : '');
           
-          const killBtn = document.createElement('button');
-          killBtn.className = 'kill-btn';
-          killBtn.textContent = isEliminated ? 'Eliminated' : 'Kill';
-          killBtn.disabled = isEliminated || !data.game_started;
-          killBtn.onclick = () => killPlayer(playerName);
-          
           li.appendChild(playerNameSpan);
-          if (data.game_started) {
-            li.appendChild(killBtn);
-          }
+          // Kill buttons removed from here - they're now only in the role assignments section
           
           playerListEl.appendChild(li);
         }

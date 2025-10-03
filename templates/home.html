@@ -8,7 +8,6 @@
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
       padding: 2rem; 
-      /* Try direct path first, then fallback to gradient */
       background: 
         linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(226, 232, 240, 0.8) 50%, rgba(203, 213, 225, 0.9) 100%),
         url('/static/mafia_bg_pic.jpg'),
@@ -24,220 +23,6 @@
       min-height: 100vh;
       margin: 0;
       position: relative;
-      overflow-x: hidden;
-    }
-    
-    /* Background decorative elements */
-    .bg-decoration {
-      position: fixed;
-      pointer-events: none;
-      z-index: 0;
-      opacity: 0.7;
-      filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.5));
-    }
-    
-    .playing-card {
-      width: 60px;
-      height: 90px;
-      background: linear-gradient(145deg, #ffffff, #f1f5f9);
-      border-radius: 8px;
-      position: relative;
-      border: 2px solid rgba(148, 163, 184, 0.4);
-      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-    }
-    
-    .playing-card::before {
-      content: '♠';
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      color: #475569;
-      font-size: 24px;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-    
-    .playing-card::after {
-      content: 'A';
-      position: absolute;
-      bottom: 8px;
-      right: 8px;
-      color: #475569;
-      font-size: 18px;
-      font-weight: bold;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-    }
-    
-    /* Different card variations */
-    .playing-card.hearts::before {
-      content: '♥';
-      color: #ef4444;
-    }
-    
-    .playing-card.hearts::after {
-      content: 'K';
-      color: #ef4444;
-    }
-    
-    .playing-card.diamonds::before {
-      content: '♦';
-      color: #ef4444;
-    }
-    
-    .playing-card.diamonds::after {
-      content: 'Q';
-      color: #ef4444;
-    }
-    
-    .playing-card.clubs::before {
-      content: '♣';
-      color: #475569;
-    }
-    
-    .playing-card.clubs::after {
-      content: 'J';
-      color: #475569;
-    }
-    
-    .playing-card.tens::before {
-      content: '♠';
-      color: #475569;
-    }
-    
-    .playing-card.tens::after {
-      content: '10';
-      color: #475569;
-      font-size: 14px;
-    }
-    
-    .playing-card.nines::before {
-      content: '♥';
-      color: #ef4444;
-    }
-    
-    .playing-card.nines::after {
-      content: '9';
-      color: #ef4444;
-    }
-    
-    .playing-card.eights::before {
-      content: '♣';
-      color: #475569;
-    }
-    
-    .playing-card.eights::after {
-      content: '8';
-      color: #475569;
-    }
-    
-    .playing-card.sevens::before {
-      content: '♦';
-      color: #ef4444;
-    }
-    
-    .playing-card.sevens::after {
-      content: '7';
-      color: #ef4444;
-    }
-    
-    .playing-card.sixes::before {
-      content: '♠';
-      color: #475569;
-    }
-    
-    .playing-card.sixes::after {
-      content: '6';
-      color: #475569;
-    }
-    
-    .playing-card.fives::before {
-      content: '♥';
-      color: #ef4444;
-    }
-    
-    .playing-card.fives::after {
-      content: '5';
-      color: #ef4444;
-    }
-    
-    .playing-card.fours::before {
-      content: '♣';
-      color: #475569;
-    }
-    
-    .playing-card.fours::after {
-      content: '4';
-      color: #475569;
-    }
-    
-    /* Position decorative elements - Random scattered positioning */
-    /* Left side cards - More random positioning */
-    .decoration-1 { top: 12%; left: 1.5%; }
-    .decoration-2 { top: 28%; left: 0.8%; }
-    .decoration-3 { top: 41%; left: 2.2%; }
-    .decoration-4 { top: 58%; left: 1.1%; }
-    .decoration-5 { top: 73%; left: 2.8%; }
-    .decoration-6 { top: 18%; left: 5.5%; }
-    .decoration-7 { top: 35%; left: 6.8%; }
-    .decoration-8 { top: 52%; left: 5.2%; }
-    .decoration-9 { top: 67%; left: 7.1%; }
-    .decoration-10 { top: 82%; left: 6.3%; }
-
-    /* Right side cards - More random positioning */
-    .decoration-11 { top: 14%; right: 1.2%; }
-    .decoration-12 { top: 31%; right: 0.9%; }
-    .decoration-13 { top: 46%; right: 2.1%; }
-    .decoration-14 { top: 62%; right: 1.4%; }
-    .decoration-15 { top: 78%; right: 2.7%; }
-    .decoration-16 { top: 21%; right: 5.8%; }
-    .decoration-17 { top: 38%; right: 6.5%; }
-    .decoration-18 { top: 55%; right: 5.4%; }
-    .decoration-19 { top: 71%; right: 7.2%; }
-    .decoration-20 { top: 86%; right: 6.1%; }
-    
-    /* Floating animation with enhanced glow pulse */
-    @keyframes float {
-      0%, 100% { 
-        transform: translateY(0px) rotate(0deg); 
-        filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.5));
-      }
-      50% { 
-        transform: translateY(-15px) rotate(8deg); 
-        filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.8));
-      }
-    }
-    
-    @keyframes glow {
-      0%, 100% { filter: drop-shadow(0 0 15px rgba(59, 130, 246, 0.5)); }
-      50% { filter: drop-shadow(0 0 30px rgba(59, 130, 246, 0.9)); }
-    }
-    
-    .floating {
-      animation: float 6s ease-in-out infinite, glow 4s ease-in-out infinite;
-    }
-    
-    .floating:nth-child(2n) {
-      animation-delay: -2s;
-      animation-duration: 8s, 5s;
-    }
-    
-    .floating:nth-child(3n) {
-      animation-delay: -4s;
-      animation-duration: 7s, 6s;
-    }
-    
-    .floating:nth-child(4n) {
-      animation-delay: -1s;
-      animation-duration: 9s, 4s;
-    }
-    
-    .floating:nth-child(5n) {
-      animation-delay: -3s;
-      animation-duration: 10s, 3s;
-    }
-    
-    .floating:nth-child(6n) {
-      animation-delay: -5s;
-      animation-duration: 11s, 6s;
     }
     
     .container { 
@@ -340,15 +125,11 @@
       body {
         background-attachment: scroll;
       }
-      .bg-decoration {
-        opacity: 0.4;
-      }
       .container {
         margin: 5vh auto;
         padding: 2rem;
         background: rgba(15, 23, 42, 0.98);
       }
-      .playing-card { width: 40px; height: 60px; }
     }
     
     @media (max-width: 1200px) {
@@ -359,75 +140,6 @@
   </style>
 </head>
 <body>
-  <!-- Background decorative elements - 10 cards on each side -->
-  <!-- Left side cards - More random positioning -->
-  <div class="bg-decoration decoration-1 floating">
-    <div class="playing-card hearts"></div>
-  </div>
-  <div class="bg-decoration decoration-2 floating">
-    <div class="playing-card diamonds"></div>
-  </div>
-  <div class="bg-decoration decoration-3 floating">
-    <div class="playing-card clubs"></div>
-  </div>
-  <div class="bg-decoration decoration-4 floating">
-    <div class="playing-card tens"></div>
-  </div>
-  <div class="bg-decoration decoration-5 floating">
-    <div class="playing-card nines"></div>
-  </div>
-  
-  <!-- Left side cards - Column 2 -->
-  <div class="bg-decoration decoration-6 floating">
-    <div class="playing-card eights"></div>
-  </div>
-  <div class="bg-decoration decoration-7 floating">
-    <div class="playing-card sevens"></div>
-  </div>
-  <div class="bg-decoration decoration-8 floating">
-    <div class="playing-card sixes"></div>
-  </div>
-  <div class="bg-decoration decoration-9 floating">
-    <div class="playing-card fives"></div>
-  </div>
-  <div class="bg-decoration decoration-10 floating">
-    <div class="playing-card fours"></div>
-  </div>
-  
-  <!-- Right side cards - More random positioning -->
-  <div class="bg-decoration decoration-11 floating">
-    <div class="playing-card"></div>
-  </div>
-  <div class="bg-decoration decoration-12 floating">
-    <div class="playing-card hearts"></div>
-  </div>
-  <div class="bg-decoration decoration-13 floating">
-    <div class="playing-card diamonds"></div>
-  </div>
-  <div class="bg-decoration decoration-14 floating">
-    <div class="playing-card clubs"></div>
-  </div>
-  <div class="bg-decoration decoration-15 floating">
-    <div class="playing-card tens"></div>
-  </div>
-  
-  <!-- Right side cards - Column 2 -->
-  <div class="bg-decoration decoration-16 floating">
-    <div class="playing-card nines"></div>
-  </div>
-  <div class="bg-decoration decoration-17 floating">
-    <div class="playing-card eights"></div>
-  </div>
-  <div class="bg-decoration decoration-18 floating">
-    <div class="playing-card sevens"></div>
-  </div>
-  <div class="bg-decoration decoration-19 floating">
-    <div class="playing-card sixes"></div>
-  </div>
-  <div class="bg-decoration decoration-20 floating">
-    <div class="playing-card fives"></div>
-  </div>
-
   <div class="container">
     <h1>MAFIA</h1>
     <p>The classic party game of deception and deduction, now online.</p>
