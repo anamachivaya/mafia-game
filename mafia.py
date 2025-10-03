@@ -67,12 +67,23 @@ def home():
     if player_name and room_name:
         room = get_room_or_404(room_name)
         if room:
-            # Verify this IP is associated with this player in this room
+            # FIXED: Verify this IP is associated with this player in this room
             player_in_room = next((p for p in room['players'] if p.get('ip') == player_ip and p['name'] == player_name), None)
-            if player_in_room and room.get('game_started') and player_name in room.get('assignments', {}):
-                role = room['assignments'][player_name]
-                description = get_role_description(role)
-                return render_template('role.html', name=player_name, role=role, description=description)
+            if player_in_room:
+                # IP matches the player - check if game started and role assigned
+                if room.get('game_started') and player_name in room.get('assignments', {}):
+                    role = room['assignments'][player_name]
+                    description = get_role_description(role)
+                    return render_template('role.html', name=player_name, role=role, description=description)
+                else:
+                    # Game not started yet or no role assigned, show thanks page
+                    return render_template('thanks.html', name=player_name, room_name=room_name)
+            else:
+                # IP doesn't match or player not in room - clear invalid cookies
+                response = make_response(render_template('home.html', error=error))
+                response.set_cookie('player_name', '', expires=0)
+                response.set_cookie('room_name', '', expires=0)
+                return response
 
     # Default landing page
     return render_template('home.html', error=error)
