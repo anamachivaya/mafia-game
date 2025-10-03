@@ -16,8 +16,11 @@ rooms = {}
 role_descriptions = {}  # Store role descriptions from JSON
 lock = Lock()
 
-# Room lifetime (seconds)
-ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 15 * 60))  # default 15 minutes
+# Room lifetime (seconds) - Extended to 1 hour
+ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 60 * 60))  # default 1 hour (3600 seconds)
+
+# Cookie lifetime - Set to match room lifetime for consistency
+COOKIE_TTL = ROOM_TTL  # 1 hour
 
 # Load role descriptions from JSON file
 def load_role_descriptions():
@@ -87,7 +90,7 @@ def make_response_with_device_cookie(template_or_redirect, **kwargs):
     else:  # It's a template name
         resp = make_response(render_template(template_or_redirect, **kwargs))
     
-    resp.set_cookie('device_id', device_id, max_age=30*24*60*60)  # 30 days
+    resp.set_cookie('device_id', device_id, max_age=COOKIE_TTL)  # Use COOKIE_TTL
     return resp
 
 # Load descriptions on startup
@@ -174,10 +177,10 @@ def create_room():
             'game_started': False
         }
 
-    # Set host cookie to allow host access (short lived)
+    # Set host cookie to allow host access (1 hour)
     resp = make_response(redirect(url_for('host_dashboard', room_name=room_name)))
-    resp.set_cookie('host_token', host_token, max_age=ROOM_TTL)
-    resp.set_cookie('host_room', room_name, max_age=ROOM_TTL)
+    resp.set_cookie('host_token', host_token, max_age=COOKIE_TTL)  # Changed from ROOM_TTL
+    resp.set_cookie('host_room', room_name, max_age=COOKIE_TTL)    # Changed from ROOM_TTL
     return resp
 
 
@@ -203,8 +206,8 @@ def host_login():
         host_token = room.get('host_token')
 
     resp = make_response(redirect(url_for('host_dashboard', room_name=room_name)))
-    resp.set_cookie('host_token', host_token, max_age=ROOM_TTL)
-    resp.set_cookie('host_room', room_name, max_age=ROOM_TTL)
+    resp.set_cookie('host_token', host_token, max_age=COOKIE_TTL)  # Changed from ROOM_TTL
+    resp.set_cookie('host_room', room_name, max_age=COOKIE_TTL)    # Changed from ROOM_TTL
     return resp
 
 
@@ -238,8 +241,8 @@ def join_page(room_name):
         if existing_player:
             # Device already joined, redirect directly to thanks page
             resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
-            resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
-            resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)  # Changed from ROOM_TTL
+            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)                  # Changed from ROOM_TTL
             return resp
     
     # Device hasn't joined yet, show join form
@@ -277,8 +280,8 @@ def join_room(room_name):
         if existing_player:
             # Device already joined, redirect to thanks page with existing name (ignore new name input)
             resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
-            resp.set_cookie('player_name', existing_player['name'], max_age=ROOM_TTL)
-            resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)  # Changed from ROOM_TTL
+            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)                  # Changed from ROOM_TTL
             return resp
 
         # Check if the requested name is already taken by a different device
@@ -290,8 +293,8 @@ def join_room(room_name):
         room['players'].append({'name': name, 'device_id': player_ip})
 
     resp = make_response_with_device_cookie('thanks.html', name=name, room_name=room_name, player_ip=player_ip)
-    resp.set_cookie('player_name', name, max_age=ROOM_TTL)
-    resp.set_cookie('room_name', room_name, max_age=ROOM_TTL)
+    resp.set_cookie('player_name', name, max_age=COOKIE_TTL)      # Changed from ROOM_TTL
+    resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)   # Changed from ROOM_TTL
     return resp
 
 @app.route("/", methods=["GET"])
