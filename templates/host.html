@@ -211,6 +211,40 @@
       color: #f1f5f9;
       font-size: 1.2rem;
     }
+    
+    /* Password management styles */
+    .password-section {
+      background: #1e293b;
+      padding: 1.5rem;
+      margin: 1rem 0;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+      border: 1px solid #334155;
+    }
+    .password-input {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+    .password-input input[type="password"] {
+      flex: 2;
+      padding: 0.5rem;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      background: #374151;
+      color: #f1f5f9;
+    }
+    .password-input input[type="password"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    .password-status {
+      font-size: 0.9rem;
+      color: #94a3b8;
+      margin-top: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -218,6 +252,16 @@
     <h1>Mafia Host Dashboard <span class="badge" id="gameStatus">Setup</span></h1>
     <div class="sub">Set up roles and wait for players to join.</div>
     
+    <!-- Password Management Section -->
+    <div class="password-section">
+      <h3>Game Password</h3>
+      <div class="password-input">
+        <input type="password" id="gamePassword" placeholder="Enter password or leave empty..." />
+        <button class="btn btn-primary" onclick="setPassword()">Set Password</button>
+      </div>
+      <div class="password-status" id="passwordStatus">No password set - anyone can join</div>
+    </div>
+
     <div id="statusPanel" class="status waiting">
       <div id="statusText">Waiting for role setup...</div>
     </div>
@@ -269,6 +313,8 @@
     const gameStatus = document.getElementById('gameStatus');
     const playerRolesSection = document.getElementById('playerRolesSection');
     const playerRolesList = document.getElementById('playerRolesList');
+    const gamePasswordEl = document.getElementById('gamePassword');
+    const passwordStatusEl = document.getElementById('passwordStatus');
 
     joinLinkEl.textContent = `${location.protocol}//${location.host}/`;
 
@@ -279,6 +325,33 @@
       const p = document.createElement('p');
       p.innerText = str;
       return p.innerHTML;
+    }
+
+    function setPassword() {
+      const password = gamePasswordEl.value;
+      
+      fetch('/api/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `password=${encodeURIComponent(password)}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          if (data.password_set) {
+            passwordStatusEl.textContent = 'Password set successfully';
+            passwordStatusEl.style.color = '#34d399';
+          } else {
+            passwordStatusEl.textContent = 'Password removed - anyone can join';
+            passwordStatusEl.style.color = '#94a3b8';
+          }
+        }
+      })
+      .catch(error => {
+        console.error('Error setting password:', error);
+        passwordStatusEl.textContent = 'Error setting password';
+        passwordStatusEl.style.color = '#f87171';
+      });
     }
 
     function addRole() {
@@ -368,8 +441,8 @@
         for (const role of currentRoles) {
           const resp = await fetch('/api/roles', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(role)
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `role_name=${encodeURIComponent(role.name)}&role_count=${role.count}`
           });
           if (!resp.ok) {
             console.error('Failed to add role:', role);
@@ -466,6 +539,15 @@
         } else {
           statusText.textContent = `Waiting... ${data.count}/${frontendTotalRoles} players joined.`;
           statusPanel.className = 'status waiting';
+        }
+        
+        // Update password status
+        if (data.password_set) {
+          passwordStatusEl.textContent = 'Password is set';
+          passwordStatusEl.style.color = '#34d399';
+        } else {
+          passwordStatusEl.textContent = 'No password set - anyone can join';
+          passwordStatusEl.style.color = '#94a3b8';
         }
         
         const now = new Date();

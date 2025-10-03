@@ -2,19 +2,77 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Joined Mafia Game</title>
+  <title>Joined - Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#f7fafc; color:#222; }
-    .card { max-width: 520px; margin: 5vh auto; background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
-    h1 { margin-top: 0; font-size: 1.6rem; }
-    .refresh-btn { margin-top: 1rem; padding: 0.8rem 1.1rem; font-size: 1rem; background: #2563eb; color: white; border: none; border-radius: 10px; cursor: pointer; }
-    .refresh-btn:hover { background:#1e4fd4; }
-    .leave-btn { margin-top: 0.5rem; padding: 0.8rem 1.1rem; font-size: 1rem; background: #dc2626; color: white; border: none; border-radius: 10px; cursor: pointer; width: 100%; }
-    .leave-btn:hover { background:#b91c1c; }
-    a { color:#2563eb; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .button-group { margin-top: 1rem; }
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+      padding: 2rem; 
+      background: #0f172a; 
+      color: #e2e8f0; 
+      min-height: 100vh;
+      margin: 0;
+    }
+    .card { 
+      max-width: 520px; 
+      margin: 5vh auto; 
+      background: #1e293b; 
+      padding: 2rem; 
+      border-radius: 12px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
+      border: 1px solid #334155;
+    }
+    h1 { 
+      margin-top: 0; 
+      font-size: 1.6rem; 
+      color: #f1f5f9;
+    }
+    p { 
+      line-height: 1.6; 
+      color: #cbd5e1;
+    }
+    .button-group { 
+      margin-top: 2rem; 
+    }
+    .btn { 
+      padding: 0.8rem 1.5rem; 
+      font-size: 1rem; 
+      border: none; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      margin-right: 0.5rem; 
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-primary { 
+      background: #2563eb; 
+      color: white; 
+    }
+    .btn-primary:hover { 
+      background: #1e40af; 
+    }
+    .btn-danger { 
+      background: #dc2626; 
+      color: white; 
+    }
+    .btn-danger:hover { 
+      background: #b91c1c; 
+    }
+    .footer { 
+      text-align: center; 
+      margin-top: 2rem; 
+      color: #94a3b8; 
+      font-size: 0.9rem; 
+    }
+    a { 
+      color: #60a5fa; 
+      text-decoration: none; 
+    }
+    a:hover { 
+      color: #93c5fd; 
+      text-decoration: underline; 
+    }
   </style>
 </head>
 <body>
@@ -22,17 +80,21 @@
     <h1>Welcome, {{ name | e }}!</h1>
     <p>You've joined the Mafia game successfully.</p>
     <p>Wait for the host to assign roles. Your role will appear here once the game starts.</p>
-    
+
     <div class="button-group">
-      <button class="refresh-btn" onclick="checkForRole()">Check for Role Assignment</button>
+      <button class="btn btn-primary" onclick="checkForRole()">Check for Role Assignment</button>
       
-      <form method="post" action="{{ url_for('leave') }}" style="margin: 0;">
+      <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
         <input type="hidden" name="player_name" value="{{ name }}">
-        <button type="submit" class="leave-btn" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
+        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
       </form>
     </div>
-    
+
     <p><a href="{{ url_for('home') }}">Join as someone else</a></p>
+  </div>
+
+  <div class="footer">
+    Created by Scissors
   </div>
 
   <script>
@@ -40,6 +102,9 @@
       // Redirect to home page, which will show role if assigned
       window.location.href = "{{ url_for('home') }}";
     }
+
+    // Auto-check for role assignment every 3 seconds
+    setInterval(checkForRole, 3000);
   </script>
 </body>
 </html>

@@ -1,0 +1,15 @@
+{
+  "mafia": "You are part of the Mafia! Your goal is to eliminate all other players without being caught. During the night phase, you can choose someone to eliminate. Work with your fellow Mafia members to achieve victory. Be careful not to reveal your identity during the day!",
+  "villager": "You are an innocent Villager! Your goal is to identify and eliminate all Mafia members. During the day, participate in discussions and vote to eliminate suspicious players. Trust your instincts and work with other villagers to save the town!",
+  "cop": "You are the cop! You have the special ability to investigate one player each night to learn their true role. Use this information wisely to help the villagers identify the Mafia. Be careful not to reveal your identity too early, as the Mafia will target you!",
+  "doctor": "You are the Doctor! Each night, you can choose one player to protect from elimination (including yourself). If the Mafia targets that player, they will survive. Use your ability strategically to keep important players alive and help the villagers win!",
+  "sheriff": "You are the Sheriff! You have the authority to lead discussions during the day phase. Your vote counts double during elimination votes. Use your influence wisely to guide the town toward victory against the Mafia!",
+  "citizen": "You are a Citizen of the town! While you have no special abilities, your voice and vote are crucial in identifying the Mafia. Pay attention to player behavior, participate in discussions, and help protect your fellow townspeople!",
+  "godfather": "You are the Godfather, leader of the Mafia! You appear innocent to cop investigations. Lead your Mafia team to victory by eliminating all other players. Your experience in deception makes you a formidable opponent!",
+  "serial killer": "You are the Serial Killer! You work alone with the goal of eliminating everyone else. Each night, you can eliminate one player. You win when you are the last player standing. Trust no one - everyone is your enemy!",
+  "suicide bomber": "You are the suicide bomber. You play for mafias. When you're voted out during daytime, you can take a villager (or a mafia) with you to death!",
+  "vigilante": "You are a vigilante that plays for villagers. Every night, you can kill a person who you think is mafia and help your fellow villagers win! (Or kill villagers and ruin your chances :( )",
+  "bodyguard": "You are a villager with protection powers. Every night you can choose one player to protect from death. However, if they're chosen to die, you die in their place. You can alsoo excercise this power to protect from suicide bomber's attacks",
+  "framer": "You are a mafia who frames villagers to make them look guilty. Every night, the player you choose will appear to be mafia to cop's investigations",
+  "joker": "You are neither a mafia nor a villager. You play for yourself! Your objective is to appear guilty and get yourselves voted out. If you're successfully voted out, you win the game!"
+}
