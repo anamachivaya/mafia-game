@@ -52,6 +52,13 @@
     .btn-primary:hover { 
       background: #1e40af; 
     }
+    .btn-success { 
+      background: #059669; 
+      color: white; 
+    }
+    .btn-success:hover { 
+      background: #047857; 
+    }
     .btn-danger { 
       background: #dc2626; 
       color: white; 
@@ -73,16 +80,57 @@
       color: #93c5fd; 
       text-decoration: underline; 
     }
+    .status-indicator {
+      background: #374151;
+      padding: 1rem;
+      border-radius: 8px;
+      margin: 1rem 0;
+      text-align: center;
+      border-left: 4px solid #fbbf24;
+      transition: all 0.3s ease;
+    }
+    .status-indicator.waiting {
+      border-left-color: #fbbf24;
+      background: #451a03;
+      color: #fbbf24;
+    }
+    .status-indicator.ready {
+      border-left-color: #34d399;
+      background: #064e3b;
+      color: #34d399;
+    }
+    .last-updated {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 0.5rem;
+    }
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Welcome, {{ name | e }}!</h1>
     <p>You've joined the Mafia game successfully.</p>
-    <p>Wait for the host to assign roles. Your role will appear here once the game starts.</p>
+    
+    <div class="status-indicator waiting" id="statusIndicator">
+      <div id="statusText">
+        <strong>Status:</strong> <span id="statusMessage">Checking game status...</span>
+      </div>
+      <div class="last-updated" id="lastUpdated">Last updated: —</div>
+    </div>
+    
+    <p id="instructionText">Waiting for host to assign roles...</p>
 
     <div class="button-group">
-      <button class="btn btn-primary" onclick="checkForRole()">Check for Role Assignment</button>
+      <button class="btn btn-primary" onclick="checkForRole()" id="checkButton">
+        <span id="buttonText">Check for Role Assignment</span>
+      </button>
       
       <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
         <input type="hidden" name="player_name" value="{{ name }}">
@@ -98,13 +146,68 @@
   </div>
 
   <script>
+    const statusIndicator = document.getElementById('statusIndicator');
+    const statusMessage = document.getElementById('statusMessage');
+    const lastUpdated = document.getElementById('lastUpdated');
+    const instructionText = document.getElementById('instructionText');
+    const checkButton = document.getElementById('checkButton');
+    const buttonText = document.getElementById('buttonText');
+    
+    let gameStarted = false;
+    let playerName = "{{ name | e }}";
+
     function checkForRole() {
       // Redirect to home page, which will show role if assigned
       window.location.href = "{{ url_for('home') }}";
     }
 
-    // Auto-check for role assignment every 3 seconds
-    setInterval(checkForRole, 3000);
+    async function updateGameStatus() {
+      try {
+        const response = await fetch('/api/players', { cache: 'no-store' });
+        const data = await response.json();
+        
+        const now = new Date();
+        lastUpdated.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+        
+        if (data.game_started) {
+          // Game has started, check if this player has a role
+          if (data.assignments && data.assignments[playerName]) {
+            statusIndicator.className = 'status-indicator ready pulse';
+            statusMessage.textContent = 'Role assigned! Click to view your role.';
+            instructionText.textContent = 'Your role has been assigned! Click the button below to see your role and description.';
+            checkButton.className = 'btn btn-success pulse';
+            buttonText.textContent = 'View My Role';
+            gameStarted = true;
+          } else {
+            statusIndicator.className = 'status-indicator waiting';
+            statusMessage.textContent = 'Game started but role not found.';
+            instructionText.textContent = 'The game has started but there seems to be an issue with your role assignment.';
+            checkButton.className = 'btn btn-primary';
+            buttonText.textContent = 'Check Again';
+          }
+        } else {
+          // Game not started yet
+          const playerCount = data.count || 0;
+          statusIndicator.className = 'status-indicator waiting';
+          statusMessage.textContent = `Waiting for host to assign roles... (${playerCount} players joined)`;
+          instructionText.textContent = 'The host is still setting up the game. Please wait for role assignment.';
+          checkButton.className = 'btn btn-primary';
+          buttonText.textContent = 'Check for Role Assignment';
+          gameStarted = false;
+        }
+        
+      } catch (error) {
+        console.error('Error checking game status:', error);
+        statusMessage.textContent = 'Error checking game status';
+        lastUpdated.textContent = `Last updated: (error contacting server)`;
+      }
+    }
+
+    // Check status immediately when page loads
+    updateGameStatus();
+    
+    // Check status every 3 seconds
+    setInterval(updateGameStatus, 3000);
   </script>
 </body>
 </html>
