@@ -144,6 +144,11 @@
 
   <div class="footer">
     Created by Scissors
+    {% if player_ip %}
+    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #64748b;">
+      Your IP: {{ player_ip | e }}
+    </div>
+    {% endif %}
   </div>
 
   <script>
