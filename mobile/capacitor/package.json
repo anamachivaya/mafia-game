@@ -1,0 +1,13 @@
+{
+  "name": "mafia-capacitor",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"This wrapper uses remote server; build step not required.\"",
+    "ios": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0"
+  }
+}

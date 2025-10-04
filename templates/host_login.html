@@ -130,4 +130,11 @@
     </div>
   </div>
 </body>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
+    });
+  }
+</script>
 </html>

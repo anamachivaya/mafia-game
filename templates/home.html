@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <title>Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mafia Game">
+  <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
   <style>
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
@@ -165,4 +170,11 @@
     <b style="color: #7f1d1d;font-size: large;">Created by Scissors. Powered by Sunisha and Diet Coke</b>
   </div>
 </body>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
+    });
+  }
+</script>
 </html>
