@@ -5,35 +5,164 @@
   <title>Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background:#f7fafc; color:#222; text-align: center; }
-    .container { max-width: 520px; margin: 10vh auto; }
-    h1 { font-size: 2.5rem; color: #1e293b; }
-    p { color: #475569; margin-bottom: 2rem; }
-    .btn { display: inline-block; text-decoration: none; padding: 1rem 2rem; font-size: 1.1rem; border-radius: 10px; font-weight: 600; transition: all 0.2s ease; }
-    .btn-primary { background: #2563eb; color: white; }
-    .btn-primary:hover { background: #1e40af; }
-    .btn-secondary { background: #e2e8f0; color: #1e293b; margin-left: 1rem; }
-    .btn-secondary:hover { background: #cbd5e1; }
-    .footer { position: absolute; bottom: 2rem; width: 100%; text-align: center; color: #94a3b8; font-size: 0.9rem; }
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
+      padding: 2rem; 
+      background: 
+        linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(226, 232, 240, 0.8) 50%, rgba(203, 213, 225, 0.9) 100%),
+        url('/static/mafia_bg_pic.jpg'),
+        url('static/mafia_bg_pic.jpg'),
+        url('{{ url_for("static", filename="mafia_bg_pic.jpg") }}'),
+        linear-gradient(135deg, #1e293b 0%, #0f172a 50%, #374151 100%);
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      background-repeat: no-repeat;
+      color: #e2e8f0; 
+      text-align: center; 
+      min-height: 100vh;
+      margin: 0;
+      position: relative;
+    }
+    
+    .container { 
+      max-width: 520px; 
+      margin: 18vh auto; 
+      background: rgba(15, 23, 42, 0.95);
+      padding: 3rem;
+      border-radius: 12px;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+      border: 1px solid #334155;
+      position: relative;
+      z-index: 1;
+      backdrop-filter: blur(15px);
+    }
+    h1 { 
+      font-size: 2.5rem; 
+      color: #f1f5f9; 
+      margin-bottom: 1rem;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    }
+    p { 
+      color: #94a3b8; 
+      margin-bottom: 2rem; 
+      font-size: 1.1rem;
+    }
+    .btn { 
+      display: inline-block; 
+      text-decoration: none; 
+      padding: 1rem 2rem; 
+      font-size: 1.1rem; 
+      border-radius: 10px; 
+      font-weight: 600; 
+      transition: all 0.2s ease; 
+      border: none;
+      cursor: pointer;
+    }
+    .btn-primary { 
+      background: #2563eb; 
+      color: white; 
+    }
+    .btn-primary:hover { 
+      background: #1e40af; 
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(37, 99, 235, 0.3);
+    }
+    .btn-secondary { 
+      background: rgb(4, 167, 4); 
+      color: #e2e8f0; 
+      margin-left: 1rem; 
+    }
+    .btn-secondary:hover { 
+      background: #2a5834; 
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(55, 65, 81, 0.3);
+    }
+    .form-section {
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 1px solid #334155;
+    }
+    input[type="text"] {
+      padding: 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      width: 60%;
+      background: #374151;
+      color: #f1f5f9;
+      font-size: 1rem;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    input[type="text"]::placeholder {
+      color: #94a3b8;
+    }
+    .error {
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      border: 1px solid #dc2626;
+    }
+    .footer { 
+      position: fixed; 
+      bottom: 2rem; 
+      left: 0;
+      right: 0;
+      text-align: center; 
+      color: #f1f5f9;
+      font-size: 0.9rem; 
+      z-index: 1;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+    
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      body {
+        background-attachment: scroll;
+      }
+      .container {
+        margin: 5vh auto;
+        padding: 2rem;
+        background: rgba(15, 23, 42, 0.98);
+      }
+    }
+    
+    @media (max-width: 1200px) {
+      .container {
+        background: rgba(15, 23, 42, 0.97);
+      }
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Mafia Game</h1>
+    <h1>MAFIA</h1>
     <p>The classic party game of deception and deduction, now online.</p>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
     <div>
       <a href="{{ url_for('create_room') }}" class="btn btn-primary">Create a Game Room</a>
       <a href="{{ url_for('host_login') }}" class="btn btn-secondary">Host Login</a>
     </div>
-    <div style="margin-top:1rem;">
+    
+    <div class="form-section">
       <form method="get" action="{{ url_for('join_page', room_name='') }}" onsubmit="event.preventDefault(); window.location.href='/room/' + encodeURIComponent(document.getElementById('room_input').value)">
-        <input id="room_input" type="text" placeholder="Enter room name to join..." style="padding:0.6rem;border-radius:8px;border:1px solid #cbd5e1;width:60%" required />
-        <button class="btn btn-primary" style="margin-left:0.5rem;">Go</button>
+        <input id="room_input" type="text" placeholder="Enter room name to join..." required />
+        <button class="btn btn-primary" style="margin-left:0.5rem;">Join Game</button>
       </form>
     </div>
   </div>
+  
   <div class="footer">
-    Created by Scissors. Powered by Sunisha and Diet Coke
+    <b style="color: #7f1d1d;font-size: large;">Created by Scissors. Powered by Sunisha and Diet Coke</b>
   </div>
 </body>
 </html>

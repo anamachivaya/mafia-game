@@ -3,6 +3,7 @@ import os
 import json
 from flask import Flask, request, jsonify, redirect, url_for, render_template, make_response, session
 from threading import Lock
+from flask import send_from_directory
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
@@ -113,11 +114,18 @@ def home():
                 # Verify this device is associated with this player in this room
                 player_in_room = next((p for p in room['players'] if p.get('device_id') == player_ip and p['name'] == player_name), None)
                 if player_in_room:
+                    # Check if player is eliminated
+                    is_eliminated = player_name in room.get('eliminated_players', [])
+                    
+                    if is_eliminated:
+                        # Player has been eliminated - show elimination message
+                        return make_response_with_device_cookie('eliminated.html', name=player_name, room_name=room_name, player_ip=player_ip)
+                    
                     # Device matches the player - check if game started and role assigned
                     if room.get('game_started') and player_name in room.get('assignments', {}):
                         role = room['assignments'][player_name]
                         description = get_role_description(role)
-                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, player_ip=player_ip)
+                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, room_name=room_name, player_ip=player_ip)  # Added room_name here
                     else:
                         # Game not started yet or no role assigned, show thanks page
                         return make_response_with_device_cookie('thanks.html', name=player_name, room_name=room_name, player_ip=player_ip)
@@ -174,7 +182,8 @@ def create_room():
             'players': [],
             'roles': [],
             'assignments': {},
-            'game_started': False
+            'game_started': False,
+            'eliminated_players': []  # Add this line
         }
 
     # Set host cookie to allow host access (1 hour)
@@ -241,13 +250,19 @@ def join_page(room_name):
         if existing_player:
             # Device already joined, redirect directly to thanks page
             resp = make_response_with_device_cookie('thanks.html', name=existing_player['name'], room_name=room_name, player_ip=player_ip)
-            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)  # Changed from ROOM_TTL
-            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)                  # Changed from ROOM_TTL
+            resp.set_cookie('player_name', existing_player['name'], max_age=COOKIE_TTL)
+            resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)
             return resp
+        
+        # Check if room has a player password set
+        password_required = room.get('player_password') is not None
     
     # Device hasn't joined yet, show join form
     error = request.args.get('error', '')
-    return make_response_with_device_cookie('join.html', room_name=room_name, error=error)
+    return make_response_with_device_cookie('join.html', 
+                                          room_name=room_name, 
+                                          error=error, 
+                                          password_required=password_required)  # Add this line
 
 
 @app.route('/enter', methods=['GET'])
@@ -297,11 +312,6 @@ def join_room(room_name):
     resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)   # Changed from ROOM_TTL
     return resp
 
-@app.route("/", methods=["GET"])
-def root_redirect():
-    # redirect to home (index)
-    return redirect(url_for('home'))
-
 
 
 @app.route('/api/rooms/<room_name>/set-player-password', methods=['POST'])
@@ -337,7 +347,8 @@ def api_players(room_name):
             'count': len(room['players']),
             'password_set': room.get('player_password') is not None,
             'game_started': room.get('game_started', False),
-            'assignments': room['assignments'] if room.get('game_started') else {}
+            'assignments': room['assignments'] if room.get('game_started') else {},
+            'eliminated_players': room.get('eliminated_players', [])  # Add this line
         }
     return jsonify(data)
 
@@ -438,6 +449,7 @@ def api_reset(room_name):
         room['assignments'].clear()
         room['game_started'] = False
         room['player_password'] = None
+        room['eliminated_players'] = []  # Add this line
 
     return jsonify({'success': True})
 
@@ -459,6 +471,7 @@ def api_reset_roles(room_name):
 
     return jsonify({'success': True})
 
+# Update the leave function to handle room switching:
 @app.route('/leave', methods=['POST'])
 def leave():
     player_name = request.form.get('player_name')
@@ -472,6 +485,9 @@ def leave():
                 # Remove player only if device ID matches
                 room['players'][:] = [p for p in room['players'] if not (p['name'] == player_name and p.get('device_id') == player_ip)]
                 room['assignments'].pop(player_name, None)
+                # Remove from eliminated players if present
+                if 'eliminated_players' in room and player_name in room['eliminated_players']:
+                    room['eliminated_players'].remove(player_name)
 
     response = make_response(redirect(url_for('home')))
     response.set_cookie('player_name', '', expires=0)
@@ -495,7 +511,8 @@ def api_debug(room_name):
             'assignments': room['assignments'],
             'game_started': room['game_started'],
             'password_set': room.get('player_password') is not None,
-            'role_descriptions_loaded': len(role_descriptions)
+            'role_descriptions_loaded': len(role_descriptions),
+            'eliminated_players': room.get('eliminated_players', [])  # Add this line
         }
     return jsonify(data)
 
@@ -505,6 +522,50 @@ def api_reload_descriptions():
     load_role_descriptions()
     return jsonify({"success": True, "descriptions_loaded": len(role_descriptions)})
 
+# Add endpoint to kill a player
+@app.route('/api/rooms/<room_name>/kill-player', methods=['POST'])
+def api_kill_player(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Only host may kill players
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    player_name = request.form.get('player_name', '').strip()
+    
+    if not player_name:
+        return jsonify({'error': 'Player name is required'}), 400
+
+    with lock:
+        # Check if game has started
+        if not room.get('game_started', False):
+            return jsonify({'error': 'Game has not started yet'}), 400
+        
+        # Check if player exists in the room
+        player_exists = any(p['name'] == player_name for p in room['players'])
+        if not player_exists:
+            return jsonify({'error': 'Player not found in room'}), 404
+        
+        # Initialize eliminated_players list if it doesn't exist
+        if 'eliminated_players' not in room:
+            room['eliminated_players'] = []
+        
+        # Check if player is already eliminated
+        if player_name in room['eliminated_players']:
+            return jsonify({'error': 'Player is already eliminated'}), 400
+        
+        # Add player to eliminated list
+        room['eliminated_players'].append(player_name)
+
+    return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
+
+@app.route('/static/<filename>')
+def static_files(filename):
+    return send_from_directory('static', filename)
 # ----------------- Startup helpers -----------------
 def find_free_port(preferred=5051):
     import socket

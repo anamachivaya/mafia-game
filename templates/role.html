@@ -14,19 +14,45 @@
       margin: 0;
     }
     .card { 
-      max-width: 600px; 
+      max-width: 520px; 
       margin: 5vh auto; 
       background: #1e293b; 
       padding: 2rem; 
       border-radius: 12px; 
       box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
       border: 1px solid #334155;
+      position: relative;
+    }
+    .card.eliminated {
+      border-color: #dc2626;
+      background: #1a1a1a;
+    }
+    .status-indicator {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .status-alive {
+      background: #059669;
+      color: white;
+    }
+    .status-eliminated {
+      background: #dc2626;
+      color: white;
     }
     h1 { 
       margin-top: 0; 
-      font-size: 1.8rem; 
+      font-size: 1.6rem; 
       color: #f1f5f9;
-      text-align: center;
+      padding-right: 6rem;
+    }
+    h1.eliminated {
+      color: #fca5a5;
+      text-decoration: line-through;
     }
     .role-badge { 
       background: #fbbf24; 
@@ -34,22 +60,35 @@
       padding: 0.75rem 1.5rem; 
       border-radius: 8px; 
       font-weight: bold; 
-      font-size: 1.2rem;
+      font-size: 1.2rem; 
+      margin: 1rem 0; 
       text-align: center;
-      margin: 1.5rem 0;
-      display: block;
+    }
+    .role-badge.eliminated {
+      background: #dc2626;
+      color: white;
+    }
+    .warning { 
+      background: #451a03; 
+      color: #fbbf24; 
+      padding: 1rem; 
+      border-radius: 8px; 
+      margin: 1rem 0; 
+      border: 1px solid #92400e;
     }
     .description { 
       background: #374151; 
-      padding: 1.5rem; 
+      padding: 1rem; 
       border-radius: 8px; 
-      margin: 1.5rem 0;
-      line-height: 1.6;
-      border-left: 4px solid #fbbf24;
+      margin: 1rem 0; 
+      color: #f1f5f9;
+    }
+    .description.eliminated {
+      background: #4c1d1d;
+      color: #fca5a5;
     }
     .button-group { 
-      margin-top: 2rem; 
-      text-align: center;
+      margin-top: 1.5rem; 
     }
     .btn { 
       padding: 0.8rem 1.5rem; 
@@ -57,7 +96,8 @@
       border: none; 
       border-radius: 8px; 
       cursor: pointer; 
-      margin: 0.5rem; 
+      margin-right: 0.5rem; 
+      margin-bottom: 0.5rem;
       font-weight: 600;
       transition: all 0.2s ease;
     }
@@ -75,35 +115,77 @@
     .btn-danger:hover { 
       background: #b91c1c; 
     }
+    .last-updated {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      margin-top: 1rem;
+      text-align: center;
+    }
     .footer { 
       text-align: center; 
       margin-top: 2rem; 
       color: #94a3b8; 
       font-size: 0.9rem; 
     }
-    .warning {
-      background: #451a03;
-      color: #fbbf24;
-      padding: 1rem;
-      border-radius: 8px;
-      margin: 1rem 0;
-      border: 1px solid #92400e;
+    
+    /* Elimination overlay */
+    .elimination-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    .elimination-message {
+      background: #1e293b;
+      padding: 3rem;
+      border-radius: 12px;
       text-align: center;
-      font-weight: 600;
+      border: 2px solid #dc2626;
+      max-width: 400px;
+    }
+    .elimination-title {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+    .elimination-text {
+      font-size: 1.5rem;
+      color: #fca5a5;
+      margin-bottom: 1rem;
+    }
+    .elimination-status {
+      background: #dc2626;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-weight: bold;
+      display: inline-block;
+    }
+    
+    /* Eliminated styling */
+    .eliminated {
+      opacity: 0.7;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Welcome, {{ name | e }}!</h1>
+  <div class="card" id="gameCard">
+    <div class="status-indicator status-alive" id="statusIndicator">ALIVE</div>
     
-    <div class="role-badge">{{ role | e }}</div>
+    <h1 id="playerName">Welcome, {{ name | e }}!</h1>
     
-    <div class="warning">
+    <div class="role-badge" id="roleBadge">{{ role | e }}</div>
+    
+    <div class="warning" id="warningMessage">
       🤫 Keep your role secret! Don't let other players see this screen.
     </div>
     
-    <div class="description">
+    <div class="description" id="roleDescription">
       {{ description | e }}
     </div>
     
@@ -115,10 +197,135 @@
         <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
       </form>
     </div>
+    
+    <div class="last-updated" id="lastUpdated">Last checked: —</div>
+  </div>
+
+  <!-- Elimination overlay -->
+  <div class="elimination-overlay" id="eliminationOverlay">
+    <div class="elimination-message">
+      <div class="elimination-title">💀</div>
+      <div class="elimination-text">You have been eliminated!</div>
+      <div class="elimination-status">ELIMINATED</div>
+      <p style="color: #94a3b8; margin-top: 2rem;">
+        You can continue to watch the game, but you can no longer participate.
+      </p>
+      <button class="btn btn-primary" onclick="hideEliminationOverlay()" style="margin-top: 1rem;">
+        Continue Watching
+      </button>
+    </div>
   </div>
 
   <div class="footer">
     Created by Scissors. Powered by Sunisha and Diet Coke
   </div>
+
+  <script>
+    const PLAYER_NAME = '{{ name | e }}';
+    const ROOM_NAME = '{{ room_name | e }}';
+    
+    let isEliminated = false;
+    let hasShownEliminationMessage = false;
+
+    function escapeHtml(str) {
+      const p = document.createElement('p');
+      p.innerText = str;
+      return p.innerHTML;
+    }
+
+    function showEliminationOverlay() {
+      if (!hasShownEliminationMessage) {
+        document.getElementById('eliminationOverlay').style.display = 'flex';
+        hasShownEliminationMessage = true;
+      }
+    }
+
+    function hideEliminationOverlay() {
+      document.getElementById('eliminationOverlay').style.display = 'none';
+    }
+
+    function updateEliminationStatus(eliminated) {
+      const gameCard = document.getElementById('gameCard');
+      const playerName = document.getElementById('playerName');
+      const roleBadge = document.getElementById('roleBadge');
+      const roleDescription = document.getElementById('roleDescription');
+      const statusIndicator = document.getElementById('statusIndicator');
+      const warningMessage = document.getElementById('warningMessage');
+
+      if (eliminated && !isEliminated) {
+        // Player just got eliminated
+        isEliminated = true;
+        
+        // Update visual elements
+        gameCard.classList.add('eliminated');
+        playerName.classList.add('eliminated');
+        roleBadge.classList.add('eliminated');
+        roleDescription.classList.add('eliminated');
+        
+        statusIndicator.textContent = 'ELIMINATED 💀';
+        statusIndicator.className = 'status-indicator status-eliminated';
+        
+        warningMessage.innerHTML = '💀 You have been eliminated from the game!';
+        warningMessage.style.background = '#4c1d1d';
+        warningMessage.style.color = '#f87171';
+        warningMessage.style.borderColor = '#dc2626';
+        
+        // Show elimination overlay
+        showEliminationOverlay();
+        
+      } else if (!eliminated && isEliminated) {
+        // Player was revived (unlikely but possible)
+        isEliminated = false;
+        
+        // Remove elimination styling
+        gameCard.classList.remove('eliminated');
+        playerName.classList.remove('eliminated');
+        roleBadge.classList.remove('eliminated');
+        roleDescription.classList.remove('eliminated');
+        
+        statusIndicator.textContent = 'ALIVE';
+        statusIndicator.className = 'status-indicator status-alive';
+        
+        warningMessage.innerHTML = "🤫 Keep your role secret! Don't let other players see this screen.";
+        warningMessage.style.background = '#451a03';
+        warningMessage.style.color = '#fbbf24';
+        warningMessage.style.borderColor = '#92400e';
+        
+        hideEliminationOverlay();
+      }
+    }
+
+    async function checkEliminationStatus() {
+      try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, {
+          cache: 'no-store'
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch player status');
+        }
+        
+        const data = await response.json();
+        const eliminatedPlayers = data.eliminated_players || [];
+        const isPlayerEliminated = eliminatedPlayers.includes(PLAYER_NAME);
+        
+        updateEliminationStatus(isPlayerEliminated);
+        
+        // Update last checked time
+        const now = new Date();
+        document.getElementById('lastUpdated').textContent = 
+          'Last checked: ' + now.toLocaleTimeString();
+        
+      } catch (error) {
+        console.error('Error checking elimination status:', error);
+        document.getElementById('lastUpdated').textContent = 
+          'Last checked: Error connecting to server';
+      }
+    }
+
+    // Check elimination status immediately and then every 3 seconds
+    checkEliminationStatus();
+    setInterval(checkEliminationStatus, 3000);
+  </script>
 </body>
 </html>
