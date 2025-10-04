@@ -190,7 +190,7 @@
     </div>
     
     <div class="button-group">
-      <button class="btn btn-primary" onclick="window.location.reload()">Refresh Role</button>
+  <!-- Removed manual refresh: players view role automatically via the main page -->
       
       <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
         <input type="hidden" name="player_name" value="{{ name }}">
@@ -210,7 +210,7 @@
       <p style="color: #94a3b8; margin-top: 2rem;">
         You can continue to watch the game, but you can no longer participate.
       </p>
-      <button class="btn btn-primary" onclick="hideEliminationOverlay()" style="margin-top: 1rem;">
+      <button class="btn btn-primary" onclick="window.location.href='/watch/' + encodeURIComponent(ROOM_NAME)" style="margin-top: 1rem;">
         Continue Watching
       </button>
     </div>
