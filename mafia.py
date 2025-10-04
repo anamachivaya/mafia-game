@@ -539,6 +539,64 @@ def api_debug(room_name):
         }
     return jsonify(data)
 
+
+@app.route('/api/rooms/<room_name>/chat', methods=['GET', 'POST'])
+def api_room_chat(room_name):
+    """Simple in-memory chat for spectators in a room.
+    GET returns recent messages. POST accepts 'message' and adds it with the sender name determined from device cookie.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Ensure chat list exists
+    with lock:
+        if 'chat' not in room:
+            room['chat'] = []
+
+    if request.method == 'GET':
+        # return last 200 messages
+        with lock:
+            msgs = room.get('chat', [])[-200:]
+        return jsonify({'messages': msgs})
+
+    # POST: add message
+    # Identify sender primarily by player_name cookie (if present and valid), otherwise fall back to device mapping
+    sender = request.cookies.get('player_name')
+    with lock:
+        if sender and any(p['name'] == sender for p in room.get('players', [])):
+            pass
+        else:
+            # fallback: device id mapping
+            device_id = get_device_id()
+            sender = None
+            for p in room.get('players', []):
+                if p.get('device_id') == device_id:
+                    sender = p['name']
+                    break
+
+    if not sender:
+        return jsonify({'error': 'Unauthorized - must be a player in the room to post chat'}), 403
+
+    text = request.form.get('message', '').strip()
+    if not text:
+        return jsonify({'error': 'Message required'}), 400
+
+    # sanitize length
+    if len(text) > 800:
+        text = text[:800]
+
+    import time
+    msg = {'sender': sender, 'text': text, 'ts': int(time.time())}
+    with lock:
+        room.setdefault('chat', []).append(msg)
+        # cap chat history
+        if len(room['chat']) > 1000:
+            room['chat'] = room['chat'][-1000:]
+
+    print(f"[CHAT] room={room_name} sender={sender} text={text}")
+    return jsonify({'success': True, 'message': msg})
+
 # Add endpoint to reload role descriptions
 @app.route("/api/reload-descriptions", methods=["POST"])
 def api_reload_descriptions():
@@ -589,6 +647,32 @@ def api_kill_player(room_name):
 @app.route('/static/<filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
+
+
+@app.route('/watch/<room_name>', methods=['GET'])
+def watch_room(room_name):
+    """Render the eliminated/waiting view directly for the current player (based on their player_name cookie).
+    This avoids extra redirects and ensures they land in the waiting room with chat immediately.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return 'Room not found or expired', 404
+
+    player_ip = get_device_id()
+    player_name = request.cookies.get('player_name')
+    if not player_name:
+        # Not a logged-in player on this device — redirect to join page
+        return redirect(url_for('join_page', room_name=room_name))
+
+    # Only allow eliminated players to view the waiting room. If this player is not eliminated,
+    # redirect them to the main home page (which will show their role if assigned).
+    with lock:
+        eliminated = room.get('eliminated_players', [])
+    if player_name not in eliminated:
+        # Redirect to home — home() will examine cookies and render role or thanks appropriately
+        return redirect(url_for('home'))
+
+    return make_response_with_device_cookie('eliminated.html', name=player_name, room_name=room_name, player_ip=player_ip)
 # ----------------- Startup helpers -----------------
 def find_free_port(preferred=5051):
     import socket

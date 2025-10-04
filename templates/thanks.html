@@ -111,6 +111,13 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
+    /* Chat styles (reuse same as eliminated) */
+    .chat-container { margin-top: 1rem; background: #0b1220; padding: 0.6rem; border-radius: 8px; }
+    .chat-messages { max-height: 220px; overflow-y: auto; padding: 0.5rem; }
+    .chat-message { padding: 0.35rem 0.5rem; margin-bottom: 0.3rem; border-radius: 6px; background: #111827; color: #e2e8f0; }
+    .chat-input { display:flex; gap:0.5rem; margin-top:0.5rem; }
+    .chat-input input[type="text"] { flex:1; padding:0.5rem; border-radius:6px; border:1px solid #374151; background:#0f172a; color:#e2e8f0; }
+    .chat-send { padding:0.5rem 0.8rem; border-radius:6px; border:none; background:#2563eb; color:white; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -168,6 +175,13 @@
     
     let gameStarted = false;
     let playerName = "{{ name | e }}";
+    const ROOM_NAME = "{{ room_name | e }}";
+
+    function escapeHtml(str) {
+      const p = document.createElement('p');
+      p.innerText = str;
+      return p.innerHTML;
+    }
 
     function checkForRole() {
       // Redirect to home page, which will show role if assigned
@@ -246,6 +260,70 @@
     
     // Check status every 3 seconds
     setInterval(updateGameStatus, 3000);
+
+    // Chat functions for lobby
+    async function fetchChat() {
+      try {
+        const resp = await fetch(`/api/rooms/${ROOM_NAME}/chat`, { cache: 'no-store' });
+        const data = await resp.json();
+        const container = document.getElementById('chatMessages');
+        if (!container) return;
+        container.innerHTML = '';
+        (data.messages || []).forEach(m => {
+          const d = new Date(m.ts * 1000);
+          const el = document.createElement('div');
+          el.className = 'chat-message';
+          el.innerHTML = `<strong>${m.sender}</strong> <span style="color:#94a3b8; font-size:0.8rem; margin-left:0.5rem;">${d.toLocaleTimeString()}</span><div style="margin-top:0.25rem;">${escapeHtml(m.text)}</div>`;
+          container.appendChild(el);
+        });
+        container.scrollTop = container.scrollHeight;
+      } catch (e) { console.error('Error fetching chat', e); }
+    }
+
+    async function postChatMessage() {
+      const input = document.getElementById('chatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      try {
+        const form = new URLSearchParams();
+        form.append('message', text);
+        const resp = await fetch(`/api/rooms/${ROOM_NAME}/chat`, { method: 'POST', body: form });
+        const data = await resp.json();
+        if (data.success) {
+          input.value = '';
+          await fetchChat();
+        } else {
+          alert('Error sending message: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('Error posting chat', e);
+        alert('Error sending message');
+      }
+    }
+
+    // Add chat UI under lobbyPlayersSection
+    (function addChatToLobby() {
+      const lobbySection = document.getElementById('lobbyPlayersSection');
+      if (!lobbySection) return;
+      const chatWrap = document.createElement('div');
+      chatWrap.className = 'chat-container';
+      chatWrap.innerHTML = `
+        <div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Lobby Chat</div>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input">
+          <input id="chatInput" type="text" placeholder="Write a message..." />
+          <button id="chatSend" class="chat-send">Send</button>
+        </div>
+      `;
+      lobbySection.appendChild(chatWrap);
+      document.getElementById('chatSend').addEventListener('click', postChatMessage);
+      document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') postChatMessage(); });
+      // poll chat only when lobby is visible
+      setInterval(() => {
+        const display = lobbySection.style.display;
+        if (display && display !== 'none') fetchChat();
+      }, 2500);
+    })();
   </script>
 </body>
 </html>
