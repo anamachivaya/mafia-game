@@ -1,7 +1,7 @@
 
 import os
 import json
-from flask import Flask, request, jsonify, redirect, url_for, render_template, make_response, session
+from flask import Flask, request, jsonify, redirect, url_for, render_template, make_response, session, Response
 from threading import Lock
 from flask import send_from_directory
 
@@ -596,6 +596,40 @@ def api_room_chat(room_name):
 
     print(f"[CHAT] room={room_name} sender={sender} text={text}")
     return jsonify({'success': True, 'message': msg})
+
+
+@app.route('/api/rooms/<room_name>/chat/stream')
+def api_room_chat_stream(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    def event_stream():
+        import time, json
+        last_index = 0
+        with lock:
+            msgs = room.get('chat', [])
+            # send full backlog on connect (bounded)
+            backlog = msgs[-200:]
+        if backlog:
+            yield 'data: ' + json.dumps({'messages': backlog}) + '\n\n'
+            last_index = len(msgs)
+        else:
+            last_index = len(msgs)
+
+        # keep connection open, push new messages as they arrive
+        while True:
+            with lock:
+                msgs = room.get('chat', [])
+                if len(msgs) > last_index:
+                    for m in msgs[last_index:]:
+                        yield 'data: ' + json.dumps({'message': m}) + '\n\n'
+                    last_index = len(msgs)
+            # heartbeat to keep the connection alive
+            yield ': heartbeat\n\n'
+            time.sleep(0.5)
+
+    return Response(event_stream(), mimetype='text/event-stream')
 
 # Add endpoint to reload role descriptions
 @app.route("/api/reload-descriptions", methods=["POST"])

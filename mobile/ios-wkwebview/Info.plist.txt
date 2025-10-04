@@ -1,0 +1,7 @@
+Add the following keys into your Xcode project's Info.plist (for clarity placed here):
+
+- NSAppTransportSecurity -> NSAllowsArbitraryLoads (set to NO) and add NSExceptionDomains -> mafia-game-1002.onrender.com with NSIncludesSubdomains = YES and NSTemporaryExceptionAllowsInsecureHTTPLoads = NO.
+- NSCameraUsageDescription, NSMicrophoneUsageDescription (if you use them) with human-readable explanations.
+- For push notifications, add appropriate entitlements in Xcode project settings.
+
+Note: Rename this file to Info.plist entries inside Xcode; this is just a guide to the keys you may need.

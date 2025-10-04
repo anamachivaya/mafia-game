@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <title>Joined - Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mafia Game">
+  <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
   <style>
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
@@ -284,21 +289,27 @@
       const input = document.getElementById('chatInput');
       const text = input.value.trim();
       if (!text) return;
+      // Optimistically append locally
+      appendChatLocal({ sender: playerName, text: text, ts: Math.floor(Date.now()/1000) });
+      input.value = '';
       try {
         const form = new URLSearchParams();
         form.append('message', text);
-        const resp = await fetch(`/api/rooms/${ROOM_NAME}/chat`, { method: 'POST', body: form });
-        const data = await resp.json();
-        if (data.success) {
-          input.value = '';
-          await fetchChat();
-        } else {
-          alert('Error sending message: ' + (data.error || 'unknown'));
-        }
+        await fetch(`/api/rooms/${ROOM_NAME}/chat`, { method: 'POST', body: form });
       } catch (e) {
         console.error('Error posting chat', e);
-        alert('Error sending message');
       }
+    }
+
+    function appendChatLocal(m) {
+      const container = document.getElementById('chatMessages');
+      if (!container) return;
+      const d = new Date((m.ts || Math.floor(Date.now()/1000)) * 1000);
+      const el = document.createElement('div');
+      el.className = 'chat-message';
+      el.innerHTML = `<strong>${m.sender}</strong> <span style="color:#94a3b8; font-size:0.8rem; margin-left:0.5rem;">${d.toLocaleTimeString()}</span><div style="margin-top:0.25rem;">${escapeHtml(m.text)}</div>`;
+      container.appendChild(el);
+      container.scrollTop = container.scrollHeight;
     }
 
     // Add chat UI under lobbyPlayersSection
@@ -318,12 +329,39 @@
       lobbySection.appendChild(chatWrap);
       document.getElementById('chatSend').addEventListener('click', postChatMessage);
       document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') postChatMessage(); });
-      // poll chat only when lobby is visible
-      setInterval(() => {
-        const display = lobbySection.style.display;
-        if (display && display !== 'none') fetchChat();
-      }, 2500);
+      // Use SSE if available for real-time updates in the lobby, otherwise poll
+      if (window.EventSource) {
+        const es = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat/stream`);
+        es.onmessage = function(evt) {
+          try {
+            const payload = JSON.parse(evt.data);
+            if (payload.messages) {
+              payload.messages.forEach(m => appendChatLocal(m));
+            } else if (payload.message) {
+              appendChatLocal(payload.message);
+            }
+          } catch (e) { /* ignore */ }
+        };
+        es.onerror = function() { console.warn('SSE connection for lobby chat lost, falling back to polling');
+          setInterval(() => {
+            const display = lobbySection.style.display;
+            if (display && display !== 'none') fetchChat();
+          }, 2500);
+        };
+      } else {
+        setInterval(() => {
+          const display = lobbySection.style.display;
+          if (display && display !== 'none') fetchChat();
+        }, 2500);
+      }
     })();
   </script>
 </body>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
+    });
+  }
+</script>
 </html>

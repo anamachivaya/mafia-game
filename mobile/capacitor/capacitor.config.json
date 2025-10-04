@@ -1,0 +1,10 @@
+{
+  "appId": "com.example.mafia",
+  "appName": "Mafia Game",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://mafia-game-1002.onrender.com",
+    "cleartext": false
+  }
+}

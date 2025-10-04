@@ -190,21 +190,28 @@
       const input = document.getElementById('chatInput');
       const text = input.value.trim();
       if (!text) return;
+      // Optimistically append locally
+      appendChatLocal({ sender: PLAYER_NAME, text: text, ts: Math.floor(Date.now()/1000) });
+      input.value = '';
       try {
         const form = new URLSearchParams();
         form.append('message', text);
-        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { method: 'POST', body: form });
-        const data = await resp.json();
-        if (data.success) {
-          input.value = '';
-          await fetchChat();
-        } else {
-          alert('Error sending message: ' + (data.error || 'unknown'));
-        }
+        await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { method: 'POST', body: form });
       } catch (e) {
         console.error('Error posting chat', e);
-        alert('Error sending message');
+        // leave optimistic message; optionally mark as failed
       }
+    }
+
+    function appendChatLocal(m) {
+      const chatContainer = document.getElementById('chatMessages');
+      if (!chatContainer) return;
+      const d = new Date((m.ts || Math.floor(Date.now()/1000)) * 1000);
+      const el = document.createElement('div');
+      el.className = 'chat-message';
+      el.innerHTML = `<strong>${m.sender}</strong> <span style="color:#94a3b8; font-size:0.8rem; margin-left:0.5rem;">${d.toLocaleTimeString()}</span><div style="margin-top:0.25rem;">${escapeHtml(m.text)}</div>`;
+      chatContainer.appendChild(el);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
     // Add chat UI into card
@@ -223,8 +230,25 @@
       card.appendChild(chatWrap);
       document.getElementById('chatSend').addEventListener('click', postChatMessage);
       document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') postChatMessage(); });
-      fetchChat();
-      setInterval(fetchChat, 2500);
+      // Use SSE if available for real-time updates
+      if (window.EventSource) {
+        const es = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat/stream`);
+        es.onmessage = function(evt) {
+          try {
+            const payload = JSON.parse(evt.data);
+            if (payload.messages) {
+              // initial backlog
+              payload.messages.forEach(m => appendChatLocal(m));
+            } else if (payload.message) {
+              appendChatLocal(payload.message);
+            }
+          } catch (e) { /* ignore JSON parse errors or heartbeat */ }
+        };
+        es.onerror = function() { console.warn('SSE connection lost, falling back to polling'); setInterval(fetchChat, 2500); };
+      } else {
+        fetchChat();
+        setInterval(fetchChat, 2500);
+      }
     })();
   </script>
 </body>
