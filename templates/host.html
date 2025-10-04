@@ -293,6 +293,19 @@
       border-radius: 4px;
       font-family: 'Courier New', monospace;
     }
+    .btn-copy {
+      padding: 0.35rem 0.6rem;
+      font-size: 0.85rem;
+      border-radius: 6px;
+      margin-left: 0.5rem;
+    }
+    .copy-status {
+      display:inline-block;
+      margin-left:0.5rem;
+      color:#94a3b8;
+      font-size:0.85rem;
+      vertical-align: middle;
+    }
     
     /* Panel headers */
     h3 {
@@ -397,7 +410,10 @@
       <button class="btn btn-danger" onclick="resetGame()" id="resetBtn">Reset Game</button>
     </div>
 
-    <p class="small">Share the join link: <code id="joinLink"></code></p>
+    <p class="small">Share the join link: <code id="joinLink"></code>
+      <button id="copyJoinBtn" class="btn btn-secondary btn-copy" onclick="copyJoinLink()">Copy</button>
+      <span id="copyStatus" class="copy-status" aria-live="polite"></span>
+    </p>
   </div>
 
   <div class="footer">
@@ -822,6 +838,31 @@
     // Poll every second
     refresh();
     setInterval(refresh, 1000);
+  </script>
+  <script>
+    async function copyJoinLink() {
+      const txt = joinLinkEl.textContent || '';
+      const statusEl = document.getElementById('copyStatus');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(txt);
+        } else {
+          // fallback
+          const ta = document.createElement('textarea');
+          ta.value = txt;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+        }
+        statusEl.textContent = 'Copied!';
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      } catch (e) {
+        console.error('Copy failed', e);
+        statusEl.textContent = 'Copy failed';
+        setTimeout(() => { statusEl.textContent = ''; }, 2000);
+      }
+    }
   </script>
 </body>
 <script>
