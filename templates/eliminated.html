@@ -167,88 +167,187 @@
     fetchAssignmentsForSpectator();
     setInterval(fetchAssignmentsForSpectator, 3000);
 
-    // Chat functionality for waiting room spectators
-    async function fetchChat() {
-      try {
-        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { cache: 'no-store' });
-        const data = await resp.json();
-        let chatContainer = document.getElementById('chatMessages');
-        if (!chatContainer) return;
-        chatContainer.innerHTML = '';
-        (data.messages || []).forEach(m => {
-          const d = new Date(m.ts * 1000);
-          const el = document.createElement('div');
-          el.className = 'chat-message';
-          el.innerHTML = `<strong>${m.sender}</strong> <span style="color:#94a3b8; font-size:0.8rem; margin-left:0.5rem;">${d.toLocaleTimeString()}</span><div style="margin-top:0.25rem;">${escapeHtml(m.text)}</div>`;
-          chatContainer.appendChild(el);
-        });
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      } catch (e) { console.error('Error fetching chat', e); }
-    }
+    // Chat functionality for waiting room spectators with dedupe and colors
+    (function(){
+      const chatContainerId = 'chatMessages';
+      const chatInputId = 'chatInput';
+      const chatSendId = 'chatSend';
 
-    async function postChatMessage() {
-      const input = document.getElementById('chatInput');
-      const text = input.value.trim();
-      if (!text) return;
-      // Optimistically append locally
-      appendChatLocal({ sender: PLAYER_NAME, text: text, ts: Math.floor(Date.now()/1000) });
-      input.value = '';
-      try {
-        const form = new URLSearchParams();
-        form.append('message', text);
-        await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { method: 'POST', body: form });
-      } catch (e) {
-        console.error('Error posting chat', e);
-        // leave optimistic message; optionally mark as failed
+  // state
+  const seenIds = new Set();
+  const pending = {}; // client_id -> element
+  const seenClientIds = new Set();
+  const serverColors = {}; // authoritative colors from server
+
+      // Build a shuffled high-contrast palette per room and map names to palette entries
+      function buildPalette(room){
+        const PALETTE_SIZE = 24;
+        const base = [];
+        for(let i=0;i<PALETTE_SIZE;i++) base.push(Math.floor(i*(360/PALETTE_SIZE)));
+        let seed = 0; for(let i=0;i<room.length;i++) seed = (seed*31 + room.charCodeAt(i)) >>> 0;
+        function rnd(){ seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+        for(let i=base.length-1;i>0;i--){ const j = Math.floor(rnd()*(i+1)); const t = base[i]; base[i]=base[j]; base[j]=t; }
+        return base;
       }
-    }
-
-    function appendChatLocal(m) {
-      const chatContainer = document.getElementById('chatMessages');
-      if (!chatContainer) return;
-      const d = new Date((m.ts || Math.floor(Date.now()/1000)) * 1000);
-      const el = document.createElement('div');
-      el.className = 'chat-message';
-      el.innerHTML = `<strong>${m.sender}</strong> <span style="color:#94a3b8; font-size:0.8rem; margin-left:0.5rem;">${d.toLocaleTimeString()}</span><div style="margin-top:0.25rem;">${escapeHtml(m.text)}</div>`;
-      chatContainer.appendChild(el);
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    // Add chat UI into card
-    (function addChatUI() {
-      const card = document.querySelector('.card');
-      const chatWrap = document.createElement('div');
-      chatWrap.className = 'chat-container';
-      chatWrap.innerHTML = `
-        <div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Waiting Room Chat</div>
-        <div id="chatMessages" class="chat-messages"></div>
-        <div class="chat-input">
-          <input id="chatInput" type="text" placeholder="Write a message..." />
-          <button id="chatSend" class="chat-send">Send</button>
-        </div>
-      `;
-      card.appendChild(chatWrap);
-      document.getElementById('chatSend').addEventListener('click', postChatMessage);
-      document.getElementById('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') postChatMessage(); });
-      // Use SSE if available for real-time updates
-      if (window.EventSource) {
-        const es = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat/stream`);
-        es.onmessage = function(evt) {
-          try {
-            const payload = JSON.parse(evt.data);
-            if (payload.messages) {
-              // initial backlog
-              payload.messages.forEach(m => appendChatLocal(m));
-            } else if (payload.message) {
-              appendChatLocal(payload.message);
-            }
-          } catch (e) { /* ignore JSON parse errors or heartbeat */ }
-        };
-        es.onerror = function() { console.warn('SSE connection lost, falling back to polling'); setInterval(fetchChat, 2500); };
-      } else {
-        fetchChat();
-        setInterval(fetchChat, 2500);
+      const _palette = buildPalette(ROOM_NAME || 'global');
+      const _paletteMap = new Map();
+      function nameColor(name){
+        if(!name) return 'hsl(210,50%,50%)';
+        if(_paletteMap.has(name)) return _paletteMap.get(name);
+        let hidx = 0; for(let i=0;i<name.length;i++) hidx = (hidx*31 + name.charCodeAt(i)) % _palette.length;
+        const hue = _palette[hidx];
+        const col = `hsl(${hue},85%,45%)`;
+        _paletteMap.set(name, col);
+        return col;
       }
+
+      function formatTs(ts){ if(!ts) return ''; const d = new Date((ts||0)*1000); return d.toLocaleTimeString(); }
+
+      function createMsgEl(m, opts={}){
+        const el = document.createElement('div');
+        el.className = 'chat-message';
+        if (opts.pending) el.classList.add('pending');
+        if (m.id) el.dataset.msgId = m.id;
+        if (m.client_id) el.dataset.clientId = m.client_id;
+
+        const name = document.createElement('strong');
+        name.textContent = m.sender;
+        name.style.color = m.color || nameColor(m.sender || '');
+
+        const ts = document.createElement('span');
+        ts.style.color = '#94a3b8';
+        ts.style.fontSize = '0.8rem';
+        ts.style.marginLeft = '0.5rem';
+        ts.textContent = formatTs(m.ts);
+
+        const text = document.createElement('div');
+        text.style.marginTop = '0.25rem';
+        text.innerHTML = escapeHtml(m.text);
+
+        el.appendChild(name);
+        el.appendChild(ts);
+        el.appendChild(text);
+        return el;
+      }
+
+      function appendOrUpdate(m){
+        if (!m) return;
+        // if pending exists with same client_id, update it
+      if (m.client_id && pending[m.client_id]){
+          const el = pending[m.client_id];
+          if (m.id) el.dataset.msgId = m.id;
+          el.classList.remove('pending');
+          // update timestamp and color if present
+          const spans = el.getElementsByTagName('span');
+          if (spans && spans[0]) spans[0].textContent = formatTs(m.ts);
+          el.querySelector('strong').style.color = m.color || nameColor(m.sender||'');
+          delete pending[m.client_id];
+          if (m.id) seenIds.add(m.id);
+          return;
+        }
+
+      
+  // if we already showed this client_id locally (optimistic) and there's no pending element, skip
+  if (m.client_id && seenClientIds.has(m.client_id)) return;
+
+  if (m.id && seenIds.has(m.id)) return;
+  if (m.id) seenIds.add(m.id);
+
+        const el = createMsgEl(m);
+        const container = document.getElementById(chatContainerId);
+        if (!container) return;
+        container.appendChild(el);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      async function postMessage(){
+        const input = document.getElementById(chatInputId);
+        if (!input) return;
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+
+        const client_id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('c-' + Date.now() + '-' + Math.random().toString(36).slice(2,8));
+        const now = Math.floor(Date.now()/1000);
+          // optimistic
+          const optimistic = { sender: PLAYER_NAME, text, ts: now, client_id };
+        // assign immediate color to avoid flash (use authoritative server color if available)
+        optimistic.color = serverColors[PLAYER_NAME] || nameColor(PLAYER_NAME);
+        // mark client_id seen immediately to avoid race where server echoes before we attach pending
+        seenClientIds.add(client_id);
+        const el = createMsgEl(optimistic, { pending:true });
+      pending[client_id] = el;
+        const container = document.getElementById(chatContainerId);
+        container.appendChild(el);
+        container.scrollTop = container.scrollHeight;
+
+        try{
+          const form = new URLSearchParams();
+          form.append('message', text);
+          form.append('client_id', client_id);
+          await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { method: 'POST', body: form });
+        }catch(e){ console.error('post chat failed', e); }
+      }
+
+      async function pollOnce(){
+        try{
+          const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, { cache: 'no-store' });
+          const data = await resp.json();
+          (data.messages || []).forEach(m => appendOrUpdate(m));
+        }catch(e){ console.warn('poll chat failed', e); }
+      }
+
+      // wire UI
+      function wire(){
+        const send = document.getElementById(chatSendId);
+        const input = document.getElementById(chatInputId);
+        if (send) send.addEventListener('click', postMessage);
+        if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); postMessage(); }});
+      }
+
+      // start SSE or fallback polling
+      function start(){
+        wire();
+        if (window.EventSource){
+          try{
+            const es = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat/stream`);
+            es.onmessage = function(evt){
+              try{
+                const payload = JSON.parse(evt.data);
+                if (payload.messages) payload.messages.forEach(m => appendOrUpdate(m));
+                else if (payload.message) appendOrUpdate(payload.message);
+              }catch(e){ }
+            };
+            es.onerror = function(){ console.warn('SSE error, falling back to polling'); setInterval(pollOnce, 2500); };
+          }catch(e){ startPolling(); }
+        }else{
+          setInterval(pollOnce, 2500);
+          pollOnce();
+        }
+      }
+
+        async function fetchServerColors(){
+          try{
+            const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+            const data = await resp.json();
+            if (data.chat_colors) Object.assign(serverColors, data.chat_colors);
+          }catch(e){ }
+        }
+
+        // ensure chat UI is present for eliminated watchers (append beneath the card)
+      (function(){
+        const card = document.querySelector('.card');
+        if (!card) return;
+        // Only add chat if not already present
+        if (!document.getElementById('chatMessages')){
+          const chatWrap = document.createElement('div');
+          chatWrap.className = 'chat-container';
+          chatWrap.innerHTML = `<div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Waiting Room Chat</div><div id="chatMessages" class="chat-messages"></div><div class="chat-input"><input id="chatInput" type="text" placeholder="Write a message..." /><button id="chatSend" class="chat-send">Send</button></div>`;
+          card.appendChild(chatWrap);
+        }
+          // fetch colors first, then start SSE/polling
+          fetchServerColors().finally(() => start());
+      })();
     })();
   </script>
 </body>
