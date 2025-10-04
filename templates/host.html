@@ -121,8 +121,11 @@
       box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
     }
     .role-input input[type="number"] { 
-      flex: 1; 
-      padding: 0.5rem; 
+      /* make the numeric role count input physically smaller while keeping alignment */
+      flex: 0 0 auto;
+      width: 4ch;
+      max-width: 5rem;
+      padding: 0.35rem 0.45rem;
       border: 1px solid #475569; 
       border-radius: 6px; 
       background: #374151;
@@ -146,26 +149,38 @@
     /* Player roles display styles */
     .player-roles { 
       margin-top: 1rem; 
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
     }
-    .player-role-item { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 0.75rem; 
-      margin: 0.5rem 0; 
-      background: #374151; 
-      border-radius: 8px; 
-      border-left: 4px solid #fbbf24;
+    .role-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 0.75rem;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(2,6,23,0.45);
+      transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease;
+      min-height: 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
     }
-    .player-role-item.eliminated {
-      background: #4c1d1d;
-      border-left-color: #dc2626;
-      opacity: 0.7;
+    /* initial (hidden) state to allow smooth entrance */
+    .role-card { opacity: 0; transform: translateY(6px) scale(0.995); }
+    .role-card.show { opacity: 1; transform: translateY(0) scale(1); }
+    .role-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(2,6,23,0.55); }
+    .role-card-header { display:flex; align-items:center; gap:0.5rem; }
+    .role-card-title { font-weight:700; color: #f1f5f9; }
+    .role-card-count { font-size:0.85rem; color:#94a3b8; }
+    .role-card.eliminated {
+      background: linear-gradient(180deg, rgba(255,0,0,0.03), rgba(0,0,0,0.02));
+      border-color: rgba(220,38,38,0.18);
+      opacity: 0.85;
     }
     .player-name { 
       font-weight: 600; 
       color: #f1f5f9;
-      display: flex;
+      display: inline-flex;
       align-items: center;
       gap: 0.5rem;
     }
@@ -176,6 +191,7 @@
       border-radius: 6px; 
       font-weight: bold; 
       font-size: 0.9rem;
+      margin-left: auto;
     }
     .player-role.eliminated {
       background: #dc2626;
@@ -193,6 +209,28 @@
       text-align: center; 
       padding: 1rem;
     }
+
+    /* Player pill style used inside role cards */
+    .player-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.55rem;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.03);
+      border-radius: 999px;
+      color: #f1f5f9;
+      font-weight: 600;
+      transition: transform 180ms cubic-bezier(.2,.9,.2,1), background 180ms ease, opacity 180ms ease;
+    }
+    .player-pill { opacity: 0; transform: translateY(6px); }
+    .player-pill.show { opacity: 1; transform: translateY(0); }
+    .player-pill:hover { transform: translateY(-2px); background: rgba(255,255,255,0.03); }
+    .player-pill .pill-actions { margin-left: 0.5rem; }
+    .player-pill.eliminated { opacity: 0.7; text-decoration: line-through; }
+
+  /* small accent dot for role headers */
+  .role-accent { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
     
     /* Player list styling */
     #playerList {
@@ -331,6 +369,13 @@
     <div class="panel">
       <h3>Role Setup</h3>
       <div id="rolesContainer"></div>
+
+      <!-- Role assignments (moved here so kill buttons appear next to roles) -->
+      <div id="playerRolesSection" style="display: none; margin-top: 1rem;">
+        <div class="roles-header">🎭 Player Role Assignments:</div>
+        <div id="playerRolesList" class="player-roles"></div>
+      </div>
+
       <button class="btn" onclick="addRole()" id="addRoleBtn">Add Role</button>
       <div class="total-count">Total Roles: <span id="totalRoles">0</span></div>
     </div>
@@ -338,18 +383,12 @@
     <div class="panel">
       <div>Players Joined <span class="count" id="playerCount">0</span></div>
       <ul id="playerList"></ul>
-      
-      <!-- New section for showing player roles -->
-      <div id="playerRolesSection" style="display: none;">
-        <div class="roles-header">🎭 Player Role Assignments:</div>
-        <div id="playerRolesList" class="player-roles"></div>
-      </div>
-      
       <div class="small time" id="time">Last updated: —</div>
     </div>
 
     <div class="panel">
       <button class="btn btn-success" onclick="assignRoles()" id="assignBtn" disabled>Assign Roles</button>
+      <button class="btn" onclick="restartGame()" id="restartBtn">Restart Game</button>
       <button class="btn btn-danger" onclick="resetGame()" id="resetBtn">Reset Game</button>
     </div>
 
@@ -383,6 +422,8 @@
 
     let roles = [];
     let gameStarted = false;
+  // Snapshot of last assignments to avoid re-rendering/animating on every poll
+  let lastAssignmentsSnapshot = null;
 
     function escapeHtml(str) {
       const p = document.createElement('p');
@@ -488,36 +529,108 @@
       return collectedRoles;
     }
 
-    // Updated function to display player role assignments with kill buttons
+    // Display assignments grouped by role, with players & kill buttons under each role
     function displayPlayerRoles(assignments, eliminatedPlayers = []) {
       if (!assignments || Object.keys(assignments).length === 0) {
         playerRolesSection.style.display = 'none';
         return;
       }
 
+      // Build role -> players mapping
+      const roleMap = {};
+      Object.keys(assignments).forEach(player => {
+        const role = assignments[player] || 'Unassigned';
+        if (!roleMap[role]) roleMap[role] = [];
+        roleMap[role].push(player);
+      });
+
       playerRolesSection.style.display = 'block';
       playerRolesList.innerHTML = '';
 
-      // Sort players by name for consistent display
-      const sortedPlayers = Object.keys(assignments).sort();
-      
-      sortedPlayers.forEach(playerName => {
-        const isEliminated = eliminatedPlayers.includes(playerName);
-        const roleDiv = document.createElement('div');
-        roleDiv.className = `player-role-item ${isEliminated ? 'eliminated' : ''}`;
-        roleDiv.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 1rem; width: 100%;">
-            <span class="player-name ${isEliminated ? 'eliminated' : ''}">
-              ${escapeHtml(playerName)}
-              ${isEliminated ? '<span class="eliminated-icon">💀</span>' : ''}
-            </span>
-            <span class="player-role ${isEliminated ? 'eliminated' : ''}">${escapeHtml(assignments[playerName])}</span>
-            <button class="kill-btn" ${isEliminated ? 'disabled' : ''} onclick="killPlayer('${escapeHtml(playerName)}')" style="margin-left: auto;">
-              ${isEliminated ? 'Eliminated' : 'Kill'}
-            </button>
-          </div>
-        `;
-        playerRolesList.appendChild(roleDiv);
+      // Render each role as a card with its players listed as pills
+      // helper: deterministic color per role name (returns hsl string)
+      function roleColor(role) {
+        let h = 0;
+        for (let i = 0; i < role.length; i++) {
+          h = (h * 31 + role.charCodeAt(i)) % 360;
+        }
+        // return a soft saturated color
+        return `hsl(${h} 75% 55% / 1)`;
+      }
+
+      const cards = [];
+      Object.keys(roleMap).sort().forEach(roleName => {
+        const card = document.createElement('div');
+        card.className = 'role-card';
+
+        const header = document.createElement('div');
+        header.className = 'role-card-header';
+        const accent = document.createElement('span');
+        accent.className = 'role-accent';
+        accent.style.background = roleColor(roleName);
+        header.appendChild(accent);
+
+        const title = document.createElement('div');
+        title.className = 'role-card-title';
+        title.textContent = roleName;
+        header.appendChild(title);
+
+        const count = document.createElement('div');
+        count.className = 'role-card-count';
+        count.textContent = `(${roleMap[roleName].length})`;
+        header.appendChild(count);
+
+        card.appendChild(header);
+
+        const playersWrap = document.createElement('div');
+        playersWrap.style.display = 'flex';
+        playersWrap.style.flexWrap = 'wrap';
+        playersWrap.style.gap = '0.5rem';
+
+        roleMap[roleName].sort().forEach(playerName => {
+          const isEliminated = eliminatedPlayers.includes(playerName);
+          const pill = document.createElement('div');
+          pill.className = 'player-pill' + (isEliminated ? ' eliminated' : '');
+
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = playerName;
+          pill.appendChild(nameSpan);
+
+          if (isEliminated) {
+            const skull = document.createElement('span');
+            skull.className = 'eliminated-icon';
+            skull.textContent = '💀';
+            pill.appendChild(skull);
+          }
+
+          const actions = document.createElement('span');
+          actions.className = 'pill-actions';
+          const btn = document.createElement('button');
+          btn.className = 'kill-btn';
+          btn.textContent = isEliminated ? 'Eliminated' : 'Kill';
+          if (isEliminated) btn.disabled = true;
+          btn.onclick = () => killPlayer(playerName);
+          actions.appendChild(btn);
+
+          pill.appendChild(actions);
+          playersWrap.appendChild(pill);
+        });
+
+        card.appendChild(playersWrap);
+        cards.push(card);
+        playerRolesList.appendChild(card);
+      });
+
+      // Smoothly reveal cards and pills to avoid glitchy pop-in
+      requestAnimationFrame(() => {
+        cards.forEach(card => {
+          card.classList.add('show');
+          // reveal pills inside
+          card.querySelectorAll('.player-pill').forEach((p, i) => {
+            // stagger slightly
+            setTimeout(() => p.classList.add('show'), i * 30);
+          });
+        });
       });
     }
 
@@ -595,6 +708,25 @@
       }
     }
 
+    async function restartGame() {
+      if (!confirm('Restart the game? This will clear current assignments and eliminated players but keep players and roles.')) return;
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/restart`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+          // Clear UI assignment snapshot and refresh to show lobby state
+          lastAssignmentsSnapshot = null;
+          await refresh();
+          alert('Game restarted — roles preserved, players remain in lobby.');
+        } else {
+          alert('Error restarting game: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('Error restarting game', e);
+        alert('Error restarting game');
+      }
+    }
+
     async function refresh() {
       try {
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
@@ -620,8 +752,14 @@
         
         // Display role assignments if game has started
         if (data.game_started && data.assignments) {
-          displayPlayerRoles(data.assignments, data.eliminated_players || []);
+          const snapshot = JSON.stringify({ assignments: data.assignments, eliminated: data.eliminated_players || [] });
+          if (snapshot !== lastAssignmentsSnapshot) {
+            // only re-render when assignments or eliminated players changed
+            lastAssignmentsSnapshot = snapshot;
+            displayPlayerRoles(data.assignments, data.eliminated_players || []);
+          }
         } else {
+          lastAssignmentsSnapshot = null;
           playerRolesSection.style.display = 'none';
         }
         

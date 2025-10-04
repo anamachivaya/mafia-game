@@ -38,6 +38,10 @@
       border: 1px solid #dc2626;
       font-size: 1.1rem;
     }
+  /* Role assignments view for eliminated players */
+  .assignments-container { margin-top: 1rem; }
+  .role-block { background: #111827; padding: 0.6rem; border-radius: 8px; margin: 0.4rem 0; color: #f1f5f9; }
+  .player-pill { display:inline-block; background: #374151; padding:0.25rem 0.5rem; border-radius:999px; margin:0.15rem; }
     .skull {
       font-size: 3rem;
       text-align: center;
@@ -98,5 +102,57 @@
     </div>
     {% endif %}
   </div>
+
+  <script>
+    const ROOM_NAME = '{{ room_name | e }}';
+    const PLAYER_NAME = '{{ name | e }}';
+
+    async function fetchAssignmentsForSpectator() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+        const data = await resp.json();
+        // Render assignments read-only
+        const container = document.getElementById('assignmentsContainer');
+        if (!container) {
+          const c = document.createElement('div');
+          c.id = 'assignmentsContainer';
+          c.className = 'assignments-container';
+          document.querySelector('.card').appendChild(c);
+        }
+        const assignEl = document.getElementById('assignmentsContainer');
+        assignEl.innerHTML = '';
+        if (data.game_started && data.assignments) {
+          // Group by role
+          const roleMap = {};
+          Object.keys(data.assignments).forEach(player => {
+            const r = data.assignments[player] || 'Unassigned';
+            (roleMap[r] = roleMap[r] || []).push(player);
+          });
+          Object.keys(roleMap).sort().forEach(role => {
+            const block = document.createElement('div');
+            block.className = 'role-block';
+            block.innerHTML = `<strong>${role}</strong>`;
+            const wrap = document.createElement('div');
+            roleMap[role].forEach(p => {
+              const pill = document.createElement('span');
+              pill.className = 'player-pill';
+              pill.textContent = p + (data.eliminated_players && data.eliminated_players.includes(p) ? ' (💀)' : '');
+              wrap.appendChild(pill);
+            });
+            block.appendChild(wrap);
+            assignEl.appendChild(block);
+          });
+        } else {
+          assignEl.innerHTML = '<div class="role-block">No assignments yet.</div>';
+        }
+      } catch (e) {
+        console.error('Error fetching assignments for spectator', e);
+      }
+    }
+
+    // fetch immediately and poll
+    fetchAssignmentsForSpectator();
+    setInterval(fetchAssignmentsForSpectator, 3000);
+  </script>
 </body>
 </html>

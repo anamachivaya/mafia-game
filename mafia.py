@@ -453,6 +453,29 @@ def api_reset(room_name):
 
     return jsonify({'success': True})
 
+
+@app.route('/api/rooms/<room_name>/restart', methods=['POST'])
+def api_restart(room_name):
+    """Restart the game but keep players and roles. Clears assignments and eliminated players and marks game not started.
+    Only host may perform this action.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        # Keep players and roles intact; clear assignments and eliminated players and mark not started
+        room['assignments'].clear()
+        room['eliminated_players'] = []
+        room['game_started'] = False
+
+    return jsonify({'success': True})
+
 @app.route('/api/rooms/<room_name>/reset-roles', methods=['POST'])
 def api_reset_roles(room_name):
     room = get_room_or_404(room_name)

@@ -127,6 +127,13 @@
     
     <p id="instructionText">Waiting for host to assign roles...</p>
 
+    <div id="lobbyPlayersSection" style="margin-top:1rem; display:none;">
+      <div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Players in lobby</div>
+      <ul id="lobbyList" style="list-style:none; padding:0; margin:0; display:flex; gap:0.5rem; flex-wrap:wrap;
+        ">
+      </ul>
+    </div>
+
     <div class="button-group">
       <button class="btn btn-primary" onclick="checkForRole()" id="checkButton">
         <span id="buttonText">Check for Role Assignment</span>
@@ -192,6 +199,8 @@
             checkButton.className = 'btn btn-success pulse';
             buttonText.textContent = 'View My Role';
             gameStarted = true;
+            // hide lobby players once game started / assignment available
+            document.getElementById('lobbyPlayersSection').style.display = 'none';
           } else {
             statusIndicator.className = 'status-indicator waiting';
             statusMessage.textContent = 'Game started but role not found.';
@@ -208,6 +217,21 @@
           checkButton.className = 'btn btn-primary';
           buttonText.textContent = 'Check for Role Assignment';
           gameStarted = false;
+          // show lobby players list so waiting players see who joined
+          const lobbySection = document.getElementById('lobbyPlayersSection');
+          const lobbyList = document.getElementById('lobbyList');
+          lobbyList.innerHTML = '';
+          (data.players || []).forEach(p => {
+            const li = document.createElement('li');
+            li.textContent = p;
+            li.style.padding = '0.35rem 0.6rem';
+            li.style.background = '#374151';
+            li.style.borderRadius = '999px';
+            li.style.color = '#f1f5f9';
+            li.style.fontWeight = '600';
+            lobbyList.appendChild(li);
+          });
+          lobbySection.style.display = (data.players && data.players.length) ? 'block' : 'none';
         }
         
       } catch (error) {
