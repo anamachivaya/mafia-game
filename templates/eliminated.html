@@ -155,8 +155,12 @@
             block.appendChild(wrap);
             assignEl.appendChild(block);
           });
+          // expose a mapping player -> role for chat rendering
+          window.assignmentMap = {};
+          Object.keys(data.assignments).forEach(pl => { window.assignmentMap[pl] = data.assignments[pl]; });
         } else {
           assignEl.innerHTML = '<div class="role-block">No assignments yet.</div>';
+          window.assignmentMap = {};
         }
       } catch (e) {
         console.error('Error fetching assignments for spectator', e);
@@ -211,7 +215,11 @@
         if (m.client_id) el.dataset.clientId = m.client_id;
 
         const name = document.createElement('strong');
-        name.textContent = m.sender;
+        // If we have assignment info, show role in brackets next to the name
+        try{
+          const role = (window.assignmentMap && window.assignmentMap[m.sender]) ? window.assignmentMap[m.sender] : null;
+          name.textContent = m.sender + (role ? ` [${role}]` : '');
+        }catch(e){ name.textContent = m.sender; }
         name.style.color = m.color || nameColor(m.sender || '');
 
         const ts = document.createElement('span');

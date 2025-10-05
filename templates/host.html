@@ -791,6 +791,8 @@
 
             const nameSpan = document.createElement('span');
             nameSpan.textContent = playerName;
+            // apply chat color if available
+            try { nameSpan.style.color = window.__chatColors && window.__chatColors[playerName] ? window.__chatColors[playerName] : undefined; } catch (e) {}
             pill.appendChild(nameSpan);
 
             if (isEliminated) {
@@ -945,6 +947,8 @@
         if (data.roles) window.__roomRoles = data.roles;
         
         playerCountEl.textContent = data.count;
+        // expose per-player chat colors for use elsewhere in the host UI
+        window.__chatColors = data.chat_colors || {};
         
         playerListEl.innerHTML = '';
         for (const playerName of data.players) {
@@ -954,6 +958,8 @@
           
           const playerNameSpan = document.createElement('span');
           playerNameSpan.className = isEliminated ? 'player-name eliminated' : 'player-name';
+          // apply chat color if the server provided one for this player
+          try { playerNameSpan.style.color = window.__chatColors[playerName] || undefined; } catch (e) {}
           playerNameSpan.innerHTML = escapeHtml(playerName) + (isEliminated ? ' <span class="eliminated-icon">💀</span>' : '');
           
           li.appendChild(playerNameSpan);
@@ -1126,7 +1132,9 @@
       const el = document.createElement('div');
       el.style.padding = '0.35rem 0.5rem';
       el.style.borderBottom = '1px dashed rgba(255,255,255,0.02)';
-      el.innerHTML = `<strong style="color:#f1f5f9">${escapeHtml(m.sender)}</strong>: ${escapeHtml(m.text)}`;
+      // Use the server-provided per-sender color when available so host view matches player colors
+      const senderColor = m.color || '#f1f5f9';
+      el.innerHTML = `<strong style="color:${senderColor}">${escapeHtml(m.sender)}</strong>: ${escapeHtml(m.text)}`;
       hostChatMessagesEl().appendChild(el);
       hostChatMessagesEl().scrollTop = hostChatMessagesEl().scrollHeight;
     }
