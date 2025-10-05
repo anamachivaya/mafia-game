@@ -176,6 +176,23 @@
     .eliminated {
       opacity: 0.7;
     }
+    /* Faction badge styles */
+    .faction-badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: white;
+      margin-left: 0.6rem;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+    .faction-mafia { background: #b91c1c; }
+    .faction-villagers { background: #059669; }
+    .faction-neutral { background: #6b7280; }
+    .faction-unknown { background: #374151; color: #f1f5f9; }
+    /* Unified faction color on player screen */
+    .faction-unified { background: #2563eb; }
   </style>
 </head>
 <body>
@@ -184,7 +201,13 @@
     
     <h1 id="playerName">Welcome, {{ name | e }}!</h1>
     
-    <div class="role-badge" id="roleBadge">{{ role | e }}</div>
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <div class="role-badge" id="roleBadge">{{ role | e }}</div>
+      {% if faction %}
+        {# Show a unified faction badge color on the player role screen for consistency #}
+        <span class="faction-badge faction-unified">{{ faction | e }}</span>
+      {% endif %}
+    </div>
     
     <div class="warning" id="warningMessage">
       🤫 Keep your role secret! Don't let other players see this screen.
@@ -221,6 +244,11 @@
     </div>
   </div>
 
+  <!-- Toast notification for brief messages before redirects -->
+  <div id="toast" style="display:none; position: fixed; left: 50%; transform: translateX(-50%); bottom: 12vh; background: rgba(0,0,0,0.7); color: #fff; padding: 0.8rem 1.2rem; border-radius: 8px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 1100;">
+    <span id="toastMessage">Message</span>
+  </div>
+
   <div class="footer">
     Created by Scissors. Powered by Sunisha and Diet Coke
   </div>
@@ -236,6 +264,24 @@
       const p = document.createElement('p');
       p.innerText = str;
       return p.innerHTML;
+    }
+
+    function showToast(msg, ms = 1200) {
+      try {
+        const toast = document.getElementById('toast');
+        const msgEl = document.getElementById('toastMessage');
+        msgEl.textContent = msg;
+        toast.style.display = 'block';
+        // fade in
+        toast.style.opacity = 0;
+        toast.style.transition = 'opacity 160ms ease';
+        requestAnimationFrame(() => { toast.style.opacity = 1; });
+        setTimeout(() => {
+          // fade out
+          toast.style.opacity = 0;
+          setTimeout(() => { toast.style.display = 'none'; }, 220);
+        }, ms);
+      } catch (e) { console.warn('Toast failed', e); }
     }
 
     function showEliminationOverlay() {
@@ -315,6 +361,20 @@
         const isPlayerEliminated = eliminatedPlayers.includes(PLAYER_NAME);
         
         updateEliminationStatus(isPlayerEliminated);
+
+        // If the host has restarted the game, assignments may be cleared and game_started will be false.
+        // In that case, redirect this player back to the waiting/thanks page so they see the lobby.
+        const gameStarted = !!data.game_started;
+        const assignments = data.assignments || {};
+        const hasAssignment = Object.prototype.hasOwnProperty.call(assignments, PLAYER_NAME);
+        if (!gameStarted || !hasAssignment) {
+          // Show a brief toast so player understands what's happening, then redirect back to the lobby/waiting page
+          showToast('Host restarted the game — returning to lobby...', 1400);
+          setTimeout(() => {
+            window.location.replace(`/room/${encodeURIComponent(ROOM_NAME)}`);
+          }, 1400);
+          return;
+        }
         
         // Update last checked time
         const now = new Date();

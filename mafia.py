@@ -15,6 +15,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-pr
 # }
 rooms = {}
 role_descriptions = {}  # Store role descriptions from JSON
+factions_map = {}
 lock = Lock()
 
 # Room lifetime (seconds) - Extended to 1 hour
@@ -36,6 +37,22 @@ def load_role_descriptions():
     except json.JSONDecodeError as e:
         print(f"Error parsing role_descriptions.json: {e}")
         role_descriptions = {}
+
+
+def load_factions():
+    global factions_map
+    try:
+        with open('factions.json', 'r', encoding='utf-8') as f:
+            factions_map = json.load(f)
+        # normalize keys to lowercase for matching
+        factions_map = {k.lower(): v for k, v in factions_map.items()}
+        print(f"Loaded {len(factions_map)} faction mappings")
+    except FileNotFoundError:
+        print('Warning: factions.json not found. Faction auto-detection disabled.')
+        factions_map = {}
+    except json.JSONDecodeError as e:
+        print(f'Error parsing factions.json: {e}')
+        factions_map = {}
 
 # Get role description (case insensitive)
 def get_role_description(role_name):
@@ -96,6 +113,21 @@ def make_response_with_device_cookie(template_or_redirect, **kwargs):
 
 # Load descriptions on startup
 load_role_descriptions()
+load_factions()
+
+
+def get_faction_for_role(role_name):
+    if not role_name:
+        return ''
+    # check explicit mapping first
+    r = role_name.strip().lower()
+    if r in factions_map:
+        return factions_map[r]
+    # try partial match tokens
+    for key, val in factions_map.items():
+        if key in r:
+            return val
+    return ''
 
 # ----------------- Routes -----------------
 @app.route("/", methods=["GET"])
@@ -125,7 +157,9 @@ def home():
                     if room.get('game_started') and player_name in room.get('assignments', {}):
                         role = room['assignments'][player_name]
                         description = get_role_description(role)
-                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, room_name=room_name, player_ip=player_ip)  # Added room_name here
+                        # faction: prefer assignment_factions if present, else try auto-detect
+                        faction = room.get('assignment_factions', {}).get(player_name) or get_faction_for_role(role)
+                        return make_response_with_device_cookie('role.html', name=player_name, role=role, description=description, faction=faction, room_name=room_name, player_ip=player_ip)
                     else:
                         # Game not started yet or no role assigned, show thanks page
                         return make_response_with_device_cookie('thanks.html', name=player_name, room_name=room_name, player_ip=player_ip)
@@ -156,6 +190,26 @@ def get_room_or_404(room_name):
             return None
         return room
 
+
+def _assign_chat_color_for_player(room, player_name):
+    """Ensure a color is assigned for player_name in room. Thread-safe caller should hold lock."""
+    if 'chat_colors' not in room:
+        room['chat_colors'] = {}
+    if player_name in room['chat_colors']:
+        return room['chat_colors'][player_name]
+
+    hue = None
+    if room.get('chat_palette') and len(room.get('chat_palette')):
+        hue = room['chat_palette'].pop(0)
+    if hue is None:
+        h = 0
+        for ch in player_name:
+            h = (h * 31 + ord(ch)) % 360
+        hue = h
+    col = f'hsl({hue},85%,45%)'
+    room['chat_colors'][player_name] = col
+    return col
+
 @app.route("/create_room", methods=["GET", "POST"])
 def create_room():
     # Host creates a room with a host password
@@ -174,7 +228,14 @@ def create_room():
 
         import time, secrets
         host_token = secrets.token_urlsafe(16)
-        rooms[room_name] = {
+    # prepare a shuffled high-contrast palette for chat colors
+    import secrets
+    PALETTE_SIZE = 24
+    base_hues = [int(i * (360 / PALETTE_SIZE)) for i in range(PALETTE_SIZE)]
+    rnd = secrets.SystemRandom()
+    rnd.shuffle(base_hues)
+
+    rooms[room_name] = {
             'host_password': host_password,
             'player_password': None,
             'host_token': host_token,
@@ -183,7 +244,14 @@ def create_room():
             'roles': [],
             'assignments': {},
             'game_started': False,
-            'eliminated_players': []  # Add this line
+            'eliminated_players': [],
+            # chat internals
+            'chat': [],
+            'chat_next_id': 1,
+            'chat_colors': {},
+            # a shuffled palette of high-contrast hues to assign per-sender
+            'chat_palette': base_hues[:],  # pop from this when assigning new senders
+            'chat_palette_orig': base_hues[:]
         }
 
     # Set host cookie to allow host access (1 hour)
@@ -305,7 +373,9 @@ def join_room(room_name):
             return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
         # Add new player with device ID (only if device hasn't joined before)
-        room['players'].append({'name': name, 'device_id': player_ip})
+    room['players'].append({'name': name, 'device_id': player_ip})
+    # Pre-assign a chat color for this player to avoid flash on first message
+    _assign_chat_color_for_player(room, name)
 
     resp = make_response_with_device_cookie('thanks.html', name=name, room_name=room_name, player_ip=player_ip)
     resp.set_cookie('player_name', name, max_age=COOKIE_TTL)      # Changed from ROOM_TTL
@@ -348,7 +418,9 @@ def api_players(room_name):
             'password_set': room.get('player_password') is not None,
             'game_started': room.get('game_started', False),
             'assignments': room['assignments'] if room.get('game_started') else {},
-            'eliminated_players': room.get('eliminated_players', [])  # Add this line
+            'eliminated_players': room.get('eliminated_players', []),  # Add this line
+            'chat_colors': room.get('chat_colors', {}),
+            'roles': room.get('roles', [])
         }
     return jsonify(data)
 
@@ -366,6 +438,7 @@ def api_add_role(room_name):
 
     role_name = request.form.get('role_name', '').strip()
     role_count = request.form.get('role_count', '1')
+    role_faction = request.form.get('role_faction', '').strip()
 
     if not role_name:
         return jsonify({'error': 'Role name is required'}), 400
@@ -378,9 +451,14 @@ def api_add_role(room_name):
         return jsonify({'error': 'Invalid role count'}), 400
 
     with lock:
-        room['roles'].append({'name': role_name, 'count': count})
+        room['roles'].append({'name': role_name, 'count': count, 'faction': role_faction})
 
     return jsonify({'success': True})
+
+
+@app.route('/api/factions', methods=['GET'])
+def api_factions():
+    return jsonify({'factions': factions_map})
 
 @app.route('/api/rooms/<room_name>/roles/<int:index>', methods=['DELETE'])
 def api_remove_role(room_name, index):
@@ -428,6 +506,14 @@ def api_assign_roles(room_name):
         for i, player_name in enumerate(player_names):
             room['assignments'][player_name] = role_list[i]
 
+        # populate assignment_factions mapping per player
+        room['assignment_factions'] = {}
+        # build a quick role->faction map from room['roles'] if present
+        role_to_faction = {r['name']: r.get('faction', '') for r in room.get('roles', [])}
+        for player_name, role_assigned in room['assignments'].items():
+            faction = role_to_faction.get(role_assigned) or get_faction_for_role(role_assigned) or ''
+            room['assignment_factions'][player_name] = faction
+
         room['game_started'] = True
 
     return jsonify({'success': True})
@@ -447,6 +533,7 @@ def api_reset(room_name):
         room['players'].clear()
         room['roles'].clear()
         room['assignments'].clear()
+        room['assignment_factions'] = {}
         room['game_started'] = False
         room['player_password'] = None
         room['eliminated_players'] = []  # Add this line
@@ -472,6 +559,7 @@ def api_restart(room_name):
         # Keep players and roles intact; clear assignments and eliminated players and mark not started
         room['assignments'].clear()
         room['eliminated_players'] = []
+        room['assignment_factions'] = {}
         room['game_started'] = False
 
     return jsonify({'success': True})
@@ -575,8 +663,15 @@ def api_room_chat(room_name):
                     sender = p['name']
                     break
 
+    # If still no sender, allow the host (authenticated via host_token cookie) to post as 'Moderator'
     if not sender:
-        return jsonify({'error': 'Unauthorized - must be a player in the room to post chat'}), 403
+        host_token = request.cookies.get('host_token')
+        host_room = request.cookies.get('host_room')
+        if host_token and host_room == room_name and host_token == room.get('host_token'):
+            sender = 'Moderator'
+
+    if not sender:
+        return jsonify({'error': 'Unauthorized - must be a player in the room or the host to post chat'}), 403
 
     text = request.form.get('message', '').strip()
     if not text:
@@ -587,14 +682,37 @@ def api_room_chat(room_name):
         text = text[:800]
 
     import time
-    msg = {'sender': sender, 'text': text, 'ts': int(time.time())}
+    # Accept optional client_id for deduping optimistic messages from clients
+    client_id = request.form.get('client_id')
+
     with lock:
+        # assign unique server id for the message
+        mid = room.get('chat_next_id', 1)
+        room['chat_next_id'] = mid + 1
+
+        # assign or ensure a color exists for this sender
+        if 'chat_colors' not in room:
+            room['chat_colors'] = {}
+        if sender not in room['chat_colors']:
+            # Prefer to pop a hue from the room-specific shuffled high-contrast palette
+            hue = None
+            if room.get('chat_palette') and len(room.get('chat_palette')):
+                hue = room['chat_palette'].pop(0)
+            # If palette exhausted or missing, fall back to deterministic hue
+            if hue is None:
+                h = 0
+                for ch in sender:
+                    h = (h * 31 + ord(ch)) % 360
+                hue = h
+            room['chat_colors'][sender] = f'hsl({hue},85%,45%)'
+
+        msg = {'id': mid, 'sender': sender, 'text': text, 'ts': int(time.time()), 'client_id': client_id, 'color': room['chat_colors'][sender]}
         room.setdefault('chat', []).append(msg)
         # cap chat history
         if len(room['chat']) > 1000:
             room['chat'] = room['chat'][-1000:]
 
-    print(f"[CHAT] room={room_name} sender={sender} text={text}")
+    print(f"[CHAT] room={room_name} sender={sender} id={msg.get('id')} text={text}")
     return jsonify({'success': True, 'message': msg})
 
 
@@ -677,6 +795,71 @@ def api_kill_player(room_name):
         room['eliminated_players'].append(player_name)
 
     return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
+
+
+@app.route('/api/rooms/<room_name>/kick-player', methods=['POST'])
+def api_kick_player(room_name):
+    """Host-only: remove a player from the room so they must rejoin.
+    This is intended for lobby management (kicking a misbehaving player)."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Only host may kick players
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    player_name = request.form.get('player_name', '').strip()
+    if not player_name:
+        return jsonify({'error': 'Player name is required'}), 400
+
+    with lock:
+        # ensure players list exists
+        if 'players' not in room:
+            room['players'] = []
+
+        # find and remove the player entry(s)
+        before = len(room['players'])
+        room['players'][:] = [p for p in room['players'] if p['name'] != player_name]
+        after = len(room['players'])
+
+        if before == after:
+            return jsonify({'error': 'Player not found in room'}), 404
+
+        # Remove assignments, eliminated status and any per-player state
+        room['assignments'].pop(player_name, None)
+        if 'eliminated_players' in room and player_name in room['eliminated_players']:
+            room['eliminated_players'].remove(player_name)
+        # Optionally free up chat color mapping for that player so a new player can get it
+        if 'chat_colors' in room and player_name in room['chat_colors']:
+            room['chat_colors'].pop(player_name, None)
+
+        # Notify via chat stream so connected clients can react (e.g., kicked client clears cookies)
+        try:
+            import time
+            if 'chat' not in room:
+                room['chat'] = []
+            mid = room.get('chat_next_id', 1)
+            room['chat_next_id'] = mid + 1
+            kick_msg = {
+                'id': mid,
+                'sender': 'SYSTEM',
+                'text': f'Player {player_name} was kicked by host',
+                'ts': int(time.time()),
+                'type': 'kick',
+                'target': player_name,
+                'color': 'hsl(0,0%,50%)'
+            }
+            room.setdefault('chat', []).append(kick_msg)
+            if len(room['chat']) > 1000:
+                room['chat'] = room['chat'][-1000:]
+        except Exception:
+            # non-fatal if notification fails
+            pass
+    print(f"[KICK] room={room_name} kicked={player_name}")
+    return jsonify({'success': True, 'message': f'{player_name} has been kicked from the room'})
 
 @app.route('/static/<filename>')
 def static_files(filename):

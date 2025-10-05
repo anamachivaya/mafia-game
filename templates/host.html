@@ -136,6 +136,25 @@
       background: #374151;
       color: #f1f5f9;
     }
+    /* Faction select styling to match inputs and sizing */
+    .role-input select.role-faction {
+      flex: 0 0 auto;
+      width: 9ch;
+      max-width: 8rem;
+      padding: 0.35rem 0.45rem;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      background: #374151;
+      color: #f1f5f9;
+      font-weight: 600;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .role-input select.role-faction:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+    }
     .role-input input[type="number"]:focus {
       outline: none;
       border-color: #2563eb;
@@ -208,6 +227,12 @@
       margin-bottom: 0.5rem; 
       color: #f1f5f9;
     }
+    .faction-section .roles-header {
+      font-size: 1rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.03);
+      margin-bottom: 0.75rem;
+    }
     .no-assignments { 
       color: #94a3b8; 
       font-style: italic; 
@@ -236,6 +261,21 @@
 
   /* small accent dot for role headers */
   .role-accent { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:0.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+    /* Faction badge used in role cards */
+    .faction-badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: white;
+      margin-left: 0.5rem;
+      border: 1px solid rgba(255,255,255,0.03);
+    }
+    .faction-mafia { background: #dc2626; }
+    .faction-villagers { background: #059669; }
+    .faction-neutral { background: #6b7280; }
+    .faction-unknown { background: #374151; color: #f1f5f9; }
     
     /* Player list styling */
     #playerList {
@@ -408,12 +448,24 @@
       <button class="btn btn-success" onclick="assignRoles()" id="assignBtn" disabled>Assign Roles</button>
       <button class="btn" onclick="restartGame()" id="restartBtn">Restart Game</button>
       <button class="btn btn-danger" onclick="resetGame()" id="resetBtn">Reset Game</button>
+      <button class="btn" id="toggleChatBtn" onclick="toggleHostChat()">Lobby Chat</button>
     </div>
 
     <p class="small">Share the join link: <code id="joinLink"></code>
       <button id="copyJoinBtn" class="btn btn-secondary btn-copy" onclick="copyJoinLink()">Copy</button>
       <span id="copyStatus" class="copy-status" aria-live="polite"></span>
     </p>
+  </div>
+
+  <!-- Host Chat Panel (hidden by default) -->
+  <div id="hostChatPanel" class="panel" style="display:none; max-width:900px; margin: 0 auto;">
+    <h3>Lobby Chat <small class="small">(Host view)</small></h3>
+    <div id="hostChatMessages" style="height:260px; overflow:auto; background:#0b1220; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03);"></div>
+    <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+      <input id="hostChatInput" placeholder="Type a message as Host..." style="flex:1; padding:0.6rem; border-radius:8px; border:1px solid #334155; background:#041027; color:#e2e8f0;" />
+      <button class="btn btn-success" onclick="sendHostChat()">Send</button>
+      <button class="btn" onclick="toggleHostChat()">Close</button>
+    </div>
   </div>
 
   <div class="footer">
@@ -510,10 +562,53 @@
       roleDiv.className = 'role-input';
       roleDiv.innerHTML = `
         <input type="text" placeholder="Role name (e.g., Mafia, Villager)" class="role-name">
+        <select class="role-faction">
+          <option value="">(auto)</option>
+          <option value="Mafia">Mafia</option>
+          <option value="Villagers">Villagers</option>
+          <option value="Neutral">Neutral</option>
+        </select>
         <input type="number" min="1" value="1" class="role-count">
         <button class="btn remove-btn" onclick="removeRole(this)">Remove</button>
       `;
       rolesContainer.appendChild(roleDiv);
+      updateTotalRoles();
+    }
+
+    // Populate editable role inputs from a server-provided roles list
+    function populateRolesFromServer(serverRoles) {
+      // serverRoles is expected to be an array of {name, count, faction}
+      // Clear existing inputs
+      rolesContainer.innerHTML = '';
+      if (!serverRoles || !serverRoles.length) {
+        // Ensure at least one blank input exists
+        addRole();
+        return;
+      }
+
+      serverRoles.forEach(r => {
+        const roleDiv = document.createElement('div');
+        roleDiv.className = 'role-input';
+        const name = r.name || '';
+        const count = r.count || 1;
+        const faction = r.faction || '';
+        roleDiv.innerHTML = `
+          <input type="text" placeholder="Role name (e.g., Mafia, Villager)" class="role-name" value="${escapeHtml(name)}">
+          <select class="role-faction">
+            <option value="">(auto)</option>
+            <option value="Mafia">Mafia</option>
+            <option value="Villagers">Villagers</option>
+            <option value="Neutral">Neutral</option>
+          </select>
+          <input type="number" min="1" value="${count}" class="role-count">
+          <button class="btn remove-btn" onclick="removeRole(this)">Remove</button>
+        `;
+        rolesContainer.appendChild(roleDiv);
+        // set faction select after insertion (to avoid HTML escaping issues)
+        const sel = roleDiv.querySelector('.role-faction');
+        if (sel) sel.value = faction || '';
+      });
+
       updateTotalRoles();
     }
 
@@ -538,19 +633,51 @@
       
       roleInputs.forEach(roleDiv => {
         const nameInput = roleDiv.querySelector('.role-name');
+        const factionSelect = roleDiv.querySelector('.role-faction');
         const countInput = roleDiv.querySelector('.role-count');
         const name = nameInput.value.trim();
         const count = parseInt(countInput.value) || 0;
+        const faction = factionSelect ? factionSelect.value : '';
         
         if (name && count > 0) {
-          collectedRoles.push({ name, count });
+          collectedRoles.push({ name, count, faction });
         }
       });
       
       return collectedRoles;
     }
 
-    // Display assignments grouped by role, with players & kill buttons under each role
+    // fetch factions map from server for auto-detect
+    let _factionsMap = {};
+    async function loadFactionsMap(){
+      try{
+        const resp = await fetch('/api/factions');
+        const data = await resp.json();
+        if (data.factions) _factionsMap = data.factions;
+      }catch(e){ }
+    }
+
+    // auto-detect faction when typing role names
+    document.addEventListener('input', (e) => {
+      if (!e.target.matches('.role-name')) return;
+      const input = e.target;
+      const val = input.value.trim().toLowerCase();
+      const roleDiv = input.closest('.role-input');
+      const sel = roleDiv && roleDiv.querySelector('.role-faction');
+      if (!sel) return;
+      if (!val){ sel.value = ''; return; }
+      // exact match first
+      if (_factionsMap[val]) { sel.value = _factionsMap[val]; return; }
+      // partial match
+      for(const k in _factionsMap){ if (val.includes(k)){ sel.value = _factionsMap[k]; return; } }
+      // no match: leave as auto
+      sel.value = '';
+    });
+
+    // load factions map on start
+    loadFactionsMap();
+
+    // Display assignments grouped by faction, then by role
     function displayPlayerRoles(assignments, eliminatedPlayers = []) {
       if (!assignments || Object.keys(assignments).length === 0) {
         playerRolesSection.style.display = 'none';
@@ -568,87 +695,139 @@
       playerRolesSection.style.display = 'block';
       playerRolesList.innerHTML = '';
 
-      // Render each role as a card with its players listed as pills
       // helper: deterministic color per role name (returns hsl string)
       function roleColor(role) {
         let h = 0;
         for (let i = 0; i < role.length; i++) {
           h = (h * 31 + role.charCodeAt(i)) % 360;
         }
-        // return a soft saturated color
         return `hsl(${h} 75% 55% / 1)`;
       }
 
-      const cards = [];
-      Object.keys(roleMap).sort().forEach(roleName => {
-        const card = document.createElement('div');
-        card.className = 'role-card';
+      // Build a quick lookup from role name -> faction using server-provided roles when available
+      const roleToFaction = {};
+      try {
+        const rr = window.__roomRoles || [];
+        for (const r of rr) {
+          if (r && r.name) roleToFaction[r.name] = r.faction || '';
+        }
+      } catch (e) { /* ignore */ }
 
-        const header = document.createElement('div');
-        header.className = 'role-card-header';
-        const accent = document.createElement('span');
-        accent.className = 'role-accent';
-        accent.style.background = roleColor(roleName);
-        header.appendChild(accent);
-
-        const title = document.createElement('div');
-        title.className = 'role-card-title';
-        title.textContent = roleName;
-        header.appendChild(title);
-
-        const count = document.createElement('div');
-        count.className = 'role-card-count';
-        count.textContent = `(${roleMap[roleName].length})`;
-        header.appendChild(count);
-
-        card.appendChild(header);
-
-        const playersWrap = document.createElement('div');
-        playersWrap.style.display = 'flex';
-        playersWrap.style.flexWrap = 'wrap';
-        playersWrap.style.gap = '0.5rem';
-
-        roleMap[roleName].sort().forEach(playerName => {
-          const isEliminated = eliminatedPlayers.includes(playerName);
-          const pill = document.createElement('div');
-          pill.className = 'player-pill' + (isEliminated ? ' eliminated' : '');
-
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = playerName;
-          pill.appendChild(nameSpan);
-
-          if (isEliminated) {
-            const skull = document.createElement('span');
-            skull.className = 'eliminated-icon';
-            skull.textContent = '💀';
-            pill.appendChild(skull);
-          }
-
-          const actions = document.createElement('span');
-          actions.className = 'pill-actions';
-          const btn = document.createElement('button');
-          btn.className = 'kill-btn';
-          btn.textContent = isEliminated ? 'Eliminated' : 'Kill';
-          if (isEliminated) btn.disabled = true;
-          btn.onclick = () => killPlayer(playerName);
-          actions.appendChild(btn);
-
-          pill.appendChild(actions);
-          playersWrap.appendChild(pill);
-        });
-
-        card.appendChild(playersWrap);
-        cards.push(card);
-        playerRolesList.appendChild(card);
+      // Group roles under their factions
+      const factionMap = {};
+      Object.keys(roleMap).forEach(roleName => {
+        const faction = roleToFaction[roleName] || '';
+        if (!factionMap[faction]) factionMap[faction] = {};
+        factionMap[faction][roleName] = roleMap[roleName];
       });
 
-      // Smoothly reveal cards and pills to avoid glitchy pop-in
+      // Render faction sections in a preferred order
+      const preferredOrder = ['Mafia', 'Villagers', 'Neutral', ''];
+      const factionsOrdered = [];
+      for (const pf of preferredOrder) if (pf in factionMap) factionsOrdered.push(pf);
+      Object.keys(factionMap).sort().forEach(f => { if (!factionsOrdered.includes(f)) factionsOrdered.push(f); });
+
+      const sectionCards = [];
+
+      for (const factionName of factionsOrdered) {
+        const rolesForFaction = factionMap[factionName] || {};
+
+        const section = document.createElement('div');
+        section.className = 'faction-section panel';
+
+        const sectHeader = document.createElement('div');
+        sectHeader.className = 'roles-header';
+        const displayFaction = factionName || 'Unspecified';
+        const countPlayers = Object.values(rolesForFaction).reduce((acc, arr) => acc + (arr ? arr.length : 0), 0);
+        sectHeader.textContent = displayFaction + ' (' + countPlayers + ')';
+        section.appendChild(sectHeader);
+
+        const rolesWrap = document.createElement('div');
+        rolesWrap.style.display = 'grid';
+        rolesWrap.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
+        rolesWrap.style.gap = '0.75rem';
+
+        Object.keys(rolesForFaction).sort().forEach(roleName => {
+          const card = document.createElement('div');
+          card.className = 'role-card';
+
+          const header = document.createElement('div');
+          header.className = 'role-card-header';
+          const accent = document.createElement('span');
+          accent.className = 'role-accent';
+          accent.style.background = roleColor(roleName);
+          header.appendChild(accent);
+
+          const title = document.createElement('div');
+          title.className = 'role-card-title';
+          title.textContent = roleName;
+          header.appendChild(title);
+
+          const count = document.createElement('div');
+          count.className = 'role-card-count';
+          count.textContent = `(${roleMap[roleName].length})`;
+          header.appendChild(count);
+
+          const rf = roleToFaction[roleName] || '';
+          if (rf) {
+            const fb = document.createElement('span');
+            const cls = 'faction-' + rf.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'unknown';
+            fb.className = 'faction-badge ' + (cls || 'faction-unknown');
+            fb.textContent = rf;
+            header.appendChild(fb);
+          }
+
+          card.appendChild(header);
+
+          const playersWrap = document.createElement('div');
+          playersWrap.style.display = 'flex';
+          playersWrap.style.flexWrap = 'wrap';
+          playersWrap.style.gap = '0.5rem';
+
+          rolesForFaction[roleName].sort().forEach(playerName => {
+            const isEliminated = eliminatedPlayers.includes(playerName);
+            const pill = document.createElement('div');
+            pill.className = 'player-pill' + (isEliminated ? ' eliminated' : '');
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = playerName;
+            // apply chat color if available
+            try { nameSpan.style.color = window.__chatColors && window.__chatColors[playerName] ? window.__chatColors[playerName] : undefined; } catch (e) {}
+            pill.appendChild(nameSpan);
+
+            if (isEliminated) {
+              const skull = document.createElement('span');
+              skull.className = 'eliminated-icon';
+              skull.textContent = '💀';
+              pill.appendChild(skull);
+            }
+
+            const actions = document.createElement('span');
+            actions.className = 'pill-actions';
+            const btn = document.createElement('button');
+            btn.className = 'kill-btn';
+            btn.textContent = isEliminated ? 'Eliminated' : 'Kill';
+            if (isEliminated) btn.disabled = true;
+            btn.onclick = () => killPlayer(playerName);
+            actions.appendChild(btn);
+
+            pill.appendChild(actions);
+            playersWrap.appendChild(pill);
+          });
+
+          card.appendChild(playersWrap);
+          rolesWrap.appendChild(card);
+          sectionCards.push(card);
+        });
+
+        section.appendChild(rolesWrap);
+        playerRolesList.appendChild(section);
+      }
+
       requestAnimationFrame(() => {
-        cards.forEach(card => {
+        sectionCards.forEach(card => {
           card.classList.add('show');
-          // reveal pills inside
           card.querySelectorAll('.player-pill').forEach((p, i) => {
-            // stagger slightly
             setTimeout(() => p.classList.add('show'), i * 30);
           });
         });
@@ -674,7 +853,7 @@
           const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/roles`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `role_name=${encodeURIComponent(role.name)}&role_count=${role.count}`
+            body: `role_name=${encodeURIComponent(role.name)}&role_count=${role.count}&role_faction=${encodeURIComponent(role.faction || '')}`
           });
           if (!resp.ok) {
             console.error('Failed to add role:', role);
@@ -737,8 +916,20 @@
         if (data.success) {
           // Clear UI assignment snapshot and refresh to show lobby state
           lastAssignmentsSnapshot = null;
+          // Refresh to get the current server roles and player list
           await refresh();
-          alert('Game restarted — roles preserved, players remain in lobby.');
+          // After refresh, if server provided roles, populate editable inputs so host can tweak them
+          try {
+            const r = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+            const d = await r.json();
+            if (d.roles && Array.isArray(d.roles) && d.roles.length) {
+              populateRolesFromServer(d.roles);
+            }
+          } catch (e) {
+            console.warn('Could not fetch server roles to populate inputs after restart', e);
+          }
+
+          alert('Game restarted — roles preserved and pre-filled for editing. Players remain in lobby.');
         } else {
           alert('Error restarting game: ' + (data.error || 'unknown'));
         }
@@ -752,8 +943,12 @@
       try {
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
         const data = await resp.json();
+        // store server-side roles info (if provided elsewhere)
+        if (data.roles) window.__roomRoles = data.roles;
         
         playerCountEl.textContent = data.count;
+        // expose per-player chat colors for use elsewhere in the host UI
+        window.__chatColors = data.chat_colors || {};
         
         playerListEl.innerHTML = '';
         for (const playerName of data.players) {
@@ -763,14 +958,36 @@
           
           const playerNameSpan = document.createElement('span');
           playerNameSpan.className = isEliminated ? 'player-name eliminated' : 'player-name';
+          // apply chat color if the server provided one for this player
+          try { playerNameSpan.style.color = window.__chatColors[playerName] || undefined; } catch (e) {}
           playerNameSpan.innerHTML = escapeHtml(playerName) + (isEliminated ? ' <span class="eliminated-icon">💀</span>' : '');
           
           li.appendChild(playerNameSpan);
-          // Kill buttons removed from here - they're now only in the role assignments section
-          
+
+          // Add Kick button (host-only action)
+          const kickActions = document.createElement('span');
+          kickActions.style.display = 'inline-flex';
+          kickActions.style.alignItems = 'center';
+          kickActions.style.gap = '0.5rem';
+
+          const kickBtn = document.createElement('button');
+          kickBtn.className = 'kill-btn';
+          kickBtn.textContent = 'Kick';
+          kickBtn.onclick = () => kickPlayerFromHost(playerName);
+          kickActions.appendChild(kickBtn);
+
+          li.appendChild(kickActions);
           playerListEl.appendChild(li);
         }
         
+        // If server provides saved roles and the local inputs are still default/empty, prefill them
+        try {
+          const localRoleNames = Array.from(document.querySelectorAll('.role-name')).map(i => i.value.trim()).filter(Boolean);
+          if (data.roles && Array.isArray(data.roles) && data.roles.length && (!localRoleNames.length || (localRoleNames.length === 1 && localRoleNames[0] === ''))) {
+            populateRolesFromServer(data.roles);
+          }
+        } catch (e) { /* ignore */ }
+
         // Display role assignments if game has started
         if (data.game_started && data.assignments) {
           const snapshot = JSON.stringify({ assignments: data.assignments, eliminated: data.eliminated_players || [] });
@@ -823,6 +1040,28 @@
       }
     }
 
+    // Host action: kick a player from the lobby (must be host-authenticated via cookie)
+    async function kickPlayerFromHost(playerName) {
+      if (!confirm(`Kick ${playerName} from the lobby? They will need to rejoin.`)) return;
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/kick-player`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `player_name=${encodeURIComponent(playerName)}`
+        });
+        const data = await resp.json();
+        if (data.success) {
+          // refresh to update UI
+          setTimeout(refresh, 150);
+        } else {
+          alert('Kick failed: ' + (data.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('Kick error', e);
+        alert('Error kicking player: ' + e.message);
+      }
+    }
+
     // Add event listeners for role count changes
     document.addEventListener('input', (e) => {
       if (e.target.classList.contains('role-count') || e.target.classList.contains('role-name')) {
@@ -838,6 +1077,89 @@
     // Poll every second
     refresh();
     setInterval(refresh, 1000);
+    
+    // --- Host chat logic ---
+    let hostChatOpen = false;
+    let hostChatEventSource = null;
+    const hostChatMessagesEl = () => document.getElementById('hostChatMessages');
+
+    function toggleHostChat() {
+      hostChatOpen = !hostChatOpen;
+      const panel = document.getElementById('hostChatPanel');
+      const btn = document.getElementById('toggleChatBtn');
+      if (hostChatOpen) {
+        panel.style.display = 'block';
+        btn.textContent = 'Close Chat';
+        startHostChatStream();
+      } else {
+        panel.style.display = 'none';
+        btn.textContent = 'Lobby Chat';
+        stopHostChatStream();
+      }
+    }
+
+    function startHostChatStream() {
+      if (hostChatEventSource) return;
+      try {
+        hostChatEventSource = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat/stream`);
+        hostChatEventSource.onmessage = (e) => {
+          try {
+            const payload = JSON.parse(e.data);
+            if (payload.messages) payload.messages.forEach(m => renderHostChatMessage(m));
+            if (payload.message) renderHostChatMessage(payload.message);
+          } catch (err) { console.warn('Host chat parse error', err); }
+        };
+        hostChatEventSource.onerror = (err) => {
+          console.warn('Host chat SSE error', err);
+          // Attempt to reconnect
+          stopHostChatStream();
+          setTimeout(() => startHostChatStream(), 1200);
+        };
+      } catch (e) {
+        console.warn('Host chat start failed', e);
+      }
+    }
+
+    function stopHostChatStream() {
+      if (hostChatEventSource) {
+        hostChatEventSource.close();
+        hostChatEventSource = null;
+      }
+    }
+
+    function renderHostChatMessage(m) {
+      if (!m || !m.sender) return;
+      const el = document.createElement('div');
+      el.style.padding = '0.35rem 0.5rem';
+      el.style.borderBottom = '1px dashed rgba(255,255,255,0.02)';
+      // Use the server-provided per-sender color when available so host view matches player colors
+      const senderColor = m.color || '#f1f5f9';
+      el.innerHTML = `<strong style="color:${senderColor}">${escapeHtml(m.sender)}</strong>: ${escapeHtml(m.text)}`;
+      hostChatMessagesEl().appendChild(el);
+      hostChatMessagesEl().scrollTop = hostChatMessagesEl().scrollHeight;
+    }
+
+    async function sendHostChat() {
+      const input = document.getElementById('hostChatInput');
+      const text = input.value.trim();
+      if (!text) return;
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `message=${encodeURIComponent(text)}`
+        });
+        const d = await resp.json();
+        if (d.success) {
+          input.value = '';
+        } else {
+          alert('Chat send failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('Send host chat error', e);
+        alert('Error sending chat');
+      }
+    }
   </script>
   <script>
     async function copyJoinLink() {
