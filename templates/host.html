@@ -791,8 +791,7 @@
 
             const nameSpan = document.createElement('span');
             nameSpan.textContent = playerName;
-            // apply chat color if available
-            try { nameSpan.style.color = window.__chatColors && window.__chatColors[playerName] ? window.__chatColors[playerName] : undefined; } catch (e) {}
+            // keep role-assignment pill names white/default in the host UI
             pill.appendChild(nameSpan);
 
             if (isEliminated) {
@@ -958,8 +957,7 @@
           
           const playerNameSpan = document.createElement('span');
           playerNameSpan.className = isEliminated ? 'player-name eliminated' : 'player-name';
-          // apply chat color if the server provided one for this player
-          try { playerNameSpan.style.color = window.__chatColors[playerName] || undefined; } catch (e) {}
+          // keep player list names white/default in the host UI (colors are only shown in lobby chat)
           playerNameSpan.innerHTML = escapeHtml(playerName) + (isEliminated ? ' <span class="eliminated-icon">💀</span>' : '');
           
           li.appendChild(playerNameSpan);
@@ -1023,6 +1021,11 @@
           statusText.textContent = `Waiting... ${data.count}/${frontendTotalRoles} players joined.`;
           statusPanel.className = 'status waiting';
         }
+
+        // Ensure host can add roles again when the game is not started (e.g., after a restart)
+        try {
+          addRoleBtn.disabled = !!data.game_started;
+        } catch (e) { /* ignore if button not present */ }
         
         // Update password status
         if (data.password_set) {
@@ -1160,6 +1163,22 @@
         alert('Error sending chat');
       }
     }
+
+    // Allow pressing Enter in the host chat input to send the message.
+    // This mirrors typical chat UX and does not interfere with other handlers.
+    try {
+      const _hostChatInput = document.getElementById('hostChatInput');
+      if (_hostChatInput) {
+        _hostChatInput.addEventListener('keydown', (e) => {
+          // Only trigger on Enter without modifier keys
+          if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            // call the existing sendHostChat (async) and ignore its promise here
+            try { sendHostChat(); } catch (err) { console.warn('sendHostChat failed on Enter', err); }
+          }
+        });
+      }
+    } catch (e) { /* ignore DOM hookup errors */ }
   </script>
   <script>
     async function copyJoinLink() {
