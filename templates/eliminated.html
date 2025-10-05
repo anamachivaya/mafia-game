@@ -314,6 +314,14 @@
             es.onmessage = function(evt){
               try{
                 const payload = JSON.parse(evt.data);
+                // If server sent kick notification, and it targets this player, clear cookies and redirect
+                if (payload.message && payload.message.type === 'kick' && payload.message.target === PLAYER_NAME){
+                  document.cookie = 'player_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                  document.cookie = 'room_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+                  try{ alert('You have been kicked from the lobby by the host. Returning to home page.'); }catch(e){}
+                  window.location.href = '{{ url_for("home") }}';
+                  return;
+                }
                 if (payload.messages) payload.messages.forEach(m => appendOrUpdate(m));
                 else if (payload.message) appendOrUpdate(payload.message);
               }catch(e){ }
