@@ -276,6 +276,24 @@
     .faction-villagers { background: #059669; }
     .faction-neutral { background: #6b7280; }
     .faction-unknown { background: #374151; color: #f1f5f9; }
+    /* Role pool (buttons) */
+    .role-pool { margin-top: 1rem; display: grid; gap: 0.75rem; }
+    .role-pool-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; }
+    .role-pool-section { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)); padding: 0.75rem; border-radius: 10px; border: 1px solid rgba(255,255,255,0.03); }
+    .role-pool-section h4 { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: #f1f5f9; }
+    .role-pool-buttons { display:flex; flex-wrap:wrap; gap:0.5rem; }
+    .role-pool-btn {
+      padding: 0.45rem 0.6rem; border-radius: 8px; border: none; cursor: pointer; font-weight:700; font-size:0.9rem;
+      background: rgba(255,255,255,0.02); color: #f1f5f9; display:inline-flex; gap:0.5rem; align-items:center;
+      transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+    }
+    .role-pool-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
+    .role-pool-btn small { display:block; font-weight:600; font-size:0.75rem; color: rgba(255,255,255,0.85); }
+    .role-pool-btn .role-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:0.5rem; box-shadow:0 2px 8px rgba(0,0,0,0.35); }
+    .role-pool-btn.faction-mafia { background: linear-gradient(180deg,#7f1d1d,#581414); color: #ffeaea; }
+    .role-pool-btn.faction-villagers { background: linear-gradient(180deg,#047857,#065f46); color: #eafff4; }
+    .role-pool-btn.faction-neutral { background: linear-gradient(180deg,#374151,#1f2937); color: #f1f5f9; }
+    .role-pool-btn.faction-unknown { background: linear-gradient(180deg,#111827,#0b1220); color: #cbd5e1; }
     
     /* Player list styling */
     #playerList {
@@ -427,6 +445,14 @@
     <div class="panel">
       <h3>Role Setup</h3>
       <div id="rolesContainer"></div>
+
+      <!-- Role Pool: segmented by faction -->
+      <div class="role-pool">
+        <div class="roles-header">📚 Role Pool</div>
+        <div class="role-pool-sections" id="rolePoolSections">
+          <!-- sections populated by JS -->
+        </div>
+      </div>
 
       <!-- Role assignments (moved here so kill buttons appear next to roles) -->
       <div id="playerRolesSection" style="display: none; margin-top: 1rem;">
@@ -581,8 +607,7 @@
       // Clear existing inputs
       rolesContainer.innerHTML = '';
       if (!serverRoles || !serverRoles.length) {
-        // Ensure at least one blank input exists
-        addRole();
+        // No server-provided roles: leave the container empty. Host can press "Add Role" to add inputs.
         return;
       }
 
@@ -1074,8 +1099,121 @@
       }
     });
 
-    // Add initial role
-    addRole();
+  // No initial role added automatically. Host may click "Add Role" to create inputs.
+
+    // --- Role pool logic ---
+    // Fetch role descriptions and render pool segmented by faction
+    async function loadRolePool() {
+      try {
+        const resp = await fetch('/role_descriptions.json', { cache: 'no-store' });
+        const roles = await resp.json();
+
+        // Try to get faction mapping from previously loaded map or fallback to /api/factions
+        let factionsMap = _factionsMap || {};
+        if (!factionsMap || Object.keys(factionsMap).length === 0) {
+          try {
+            const r = await fetch('/api/factions');
+            const d = await r.json();
+            if (d.factions) factionsMap = d.factions;
+          } catch (e) { /* ignore */ }
+        }
+
+        // Build an inverted map: factionName -> [roleNames]
+        const byFaction = {};
+        for (const [roleName, desc] of Object.entries(roles)) {
+          const key = (factionsMap[roleName.toLowerCase()] || '') || '';
+          if (!byFaction[key]) byFaction[key] = [];
+          byFaction[key].push({ name: roleName, desc });
+        }
+
+        // Preferred order
+        const preferredOrder = ['Mafia', 'Villagers', 'Neutral', ''];
+        const sectionsEl = document.getElementById('rolePoolSections');
+        sectionsEl.innerHTML = '';
+
+        const allFactions = new Set([...Object.keys(byFaction)]);
+        const ordered = [];
+        for (const pf of preferredOrder) if (allFactions.has(pf)) { ordered.push(pf); allFactions.delete(pf); }
+        for (const f of Array.from(allFactions).sort()) ordered.push(f);
+
+        for (const faction of ordered) {
+          const sect = document.createElement('div');
+          sect.className = 'role-pool-section';
+          const h4 = document.createElement('h4');
+          h4.textContent = faction || 'Unspecified';
+          sect.appendChild(h4);
+
+          const wrap = document.createElement('div');
+          wrap.className = 'role-pool-buttons';
+
+          (byFaction[faction] || []).sort((a,b)=>a.name.localeCompare(b.name)).forEach(r => {
+            const btn = document.createElement('button');
+            btn.className = 'role-pool-btn';
+            const cls = 'faction-' + ((faction||'unknown').toLowerCase().replace(/[^a-z0-9]+/g, ''));
+            btn.classList.add(cls);
+            btn.title = r.desc || '';
+            btn.innerHTML = `<span class="role-dot" style="background:${dotColorForRole(r.name)}"></span><span>${escapeHtml(r.name)}</span>`;
+            btn.onclick = () => onRolePoolClick(r.name, faction);
+            wrap.appendChild(btn);
+          });
+
+          sect.appendChild(wrap);
+          sectionsEl.appendChild(sect);
+        }
+      } catch (e) {
+        console.error('Failed to load role pool', e);
+      }
+    }
+
+    // Generate a small deterministic color for the role dot
+    function dotColorForRole(role) {
+      let h = 0;
+      for (let i = 0; i < role.length; i++) h = (h * 31 + role.charCodeAt(i)) % 360;
+      return `hsl(${h} 70% 55% / 1)`;
+    }
+
+    // When host clicks a role in the pool: add it to inputs or increment existing count
+    function onRolePoolClick(roleName, factionName) {
+      // find existing role input with same name (case-insensitive)
+      const inputs = Array.from(document.querySelectorAll('.role-input'));
+      for (const div of inputs) {
+        const nameInput = div.querySelector('.role-name');
+        const countInput = div.querySelector('.role-count');
+        const factionSelect = div.querySelector('.role-faction');
+        if (!nameInput) continue;
+        if (nameInput.value.trim().toLowerCase() === roleName.toLowerCase()) {
+          // increment count
+          countInput.value = (parseInt(countInput.value) || 0) + 1;
+          updateTotalRoles();
+          setTimeout(refresh, 50);
+          return;
+        }
+      }
+
+      // otherwise add new role input prefilled
+      const roleDiv = document.createElement('div');
+      roleDiv.className = 'role-input';
+      roleDiv.innerHTML = `
+        <input type="text" placeholder="Role name (e.g., Mafia, Villager)" class="role-name" value="${escapeHtml(roleName)}">
+        <select class="role-faction">
+          <option value="">(auto)</option>
+          <option value="Mafia">Mafia</option>
+          <option value="Villagers">Villagers</option>
+          <option value="Neutral">Neutral</option>
+        </select>
+        <input type="number" min="1" value="1" class="role-count">
+        <button class="btn remove-btn" onclick="removeRole(this)">Remove</button>
+      `;
+      rolesContainer.appendChild(roleDiv);
+      // set faction select
+      const sel = roleDiv.querySelector('.role-faction');
+      if (sel) sel.value = factionName || '';
+      updateTotalRoles();
+      setTimeout(refresh, 50);
+    }
+
+    // Load role pool now
+    loadRolePool();
 
     // Poll every second
     refresh();

@@ -14,7 +14,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-pr
 #   players: [{name, session_id}], roles: [{name,count}], assignments: {player: role}, game_started
 # }
 rooms = {}
-role_descriptions = {}  # Store role descriptions from JSON
+roles_data = {}
 factions_map = {}
 lock = Lock()
 
@@ -24,52 +24,43 @@ ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 60 * 60))  # default 1 hour (3
 # Cookie lifetime - Set to match room lifetime for consistency
 COOKIE_TTL = ROOM_TTL  # 1 hour
 
-# Load role descriptions from JSON file
-def load_role_descriptions():
-    global role_descriptions
+def load_roles_data():
+    """Load a merged roles.json file containing description and faction for each role.
+    Populates roles_data and a quick lookup factions_map (lowercased keys).
+    """
+    global roles_data, factions_map
     try:
-        with open('role_descriptions.json', 'r', encoding='utf-8') as f:
-            role_descriptions = json.load(f)
-        print(f"Loaded {len(role_descriptions)} role descriptions")
+        with open('roles.json', 'r', encoding='utf-8') as f:
+            roles_data = json.load(f)
+        print(f"Loaded {len(roles_data)} roles from roles.json")
     except FileNotFoundError:
-        print("Warning: role_descriptions.json not found. Role descriptions will be empty.")
-        role_descriptions = {}
+        print("Warning: roles.json not found. Role data will be empty.")
+        roles_data = {}
     except json.JSONDecodeError as e:
-        print(f"Error parsing role_descriptions.json: {e}")
-        role_descriptions = {}
+        print(f"Error parsing roles.json: {e}")
+        roles_data = {}
 
-
-def load_factions():
-    global factions_map
-    try:
-        with open('factions.json', 'r', encoding='utf-8') as f:
-            factions_map = json.load(f)
-        # normalize keys to lowercase for matching
-        factions_map = {k.lower(): v for k, v in factions_map.items()}
-        print(f"Loaded {len(factions_map)} faction mappings")
-    except FileNotFoundError:
-        print('Warning: factions.json not found. Faction auto-detection disabled.')
-        factions_map = {}
-    except json.JSONDecodeError as e:
-        print(f'Error parsing factions.json: {e}')
-        factions_map = {}
+    # Build factions_map from roles_data for quick lookup (normalize keys)
+    factions_map = {}
+    for name, info in roles_data.items():
+        if isinstance(info, dict):
+            faction = info.get('faction') or ''
+            factions_map[name.lower()] = faction
 
 # Get role description (case insensitive)
 def get_role_description(role_name):
     if not role_name:
         return "No role assigned yet."
-    
-    # Try exact match first
-    if role_name in role_descriptions:
-        return role_descriptions[role_name]
-    
-    # Try case insensitive match
-    role_name_lower = role_name.lower()
-    for key, description in role_descriptions.items():
-        if key.lower() == role_name_lower:
-            return description
-    
-    # Default description if role not found
+    # exact match in roles_data (case sensitive first)
+    if role_name in roles_data and isinstance(roles_data[role_name], dict):
+        return roles_data[role_name].get('description', '')
+
+    # case-insensitive search
+    rn = role_name.lower()
+    for k, v in roles_data.items():
+        if k.lower() == rn and isinstance(v, dict):
+            return v.get('description', '')
+
     return f"You are a {role_name}. No specific description available for this role."
 
 # Add this helper function after the imports
@@ -112,8 +103,7 @@ def make_response_with_device_cookie(template_or_redirect, **kwargs):
     return resp
 
 # Load descriptions on startup
-load_role_descriptions()
-load_factions()
+load_roles_data()
 
 
 def get_faction_for_role(role_name):
@@ -622,7 +612,7 @@ def api_debug(room_name):
             'assignments': room['assignments'],
             'game_started': room['game_started'],
             'password_set': room.get('player_password') is not None,
-            'role_descriptions_loaded': len(role_descriptions),
+            'role_descriptions_loaded': len(roles_data),
             'eliminated_players': room.get('eliminated_players', [])  # Add this line
         }
     return jsonify(data)
@@ -752,8 +742,8 @@ def api_room_chat_stream(room_name):
 # Add endpoint to reload role descriptions
 @app.route("/api/reload-descriptions", methods=["POST"])
 def api_reload_descriptions():
-    load_role_descriptions()
-    return jsonify({"success": True, "descriptions_loaded": len(role_descriptions)})
+    load_roles_data()
+    return jsonify({"success": True, "descriptions_loaded": len(roles_data)})
 
 # Add endpoint to kill a player
 @app.route('/api/rooms/<room_name>/kill-player', methods=['POST'])
@@ -864,6 +854,19 @@ def api_kick_player(room_name):
 @app.route('/static/<filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
+
+
+@app.route('/role_descriptions.json', methods=['GET'])
+def serve_role_descriptions():
+    # For frontend compatibility return a mapping of roleName -> description
+    flat = {}
+    for name, info in roles_data.items():
+        if isinstance(info, dict):
+            flat[name] = info.get('description', '')
+        else:
+            # fallback: if roles_data stored as description string
+            flat[name] = str(info)
+    return jsonify(flat)
 
 
 @app.route('/watch/<room_name>', methods=['GET'])
