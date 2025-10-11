@@ -1,6 +1,7 @@
 
 import os
 import json
+import time
 from flask import Flask, request, jsonify, redirect, url_for, render_template, make_response, session, Response
 from threading import Lock
 from flask import send_from_directory
@@ -476,6 +477,729 @@ def api_add_role(room_name):
     return jsonify({'success': True})
 
 
+## ----------------- Interactive game flow (night/day) -----------------
+
+def _init_night_state(room):
+    """Initialize per-night action containers."""
+    room['phase'] = 'night'
+    # night_step is an index into NIGHT_SEQUENCE (0-based)
+    room['night_step'] = 0
+    # night_actions will only include keys for actions that have been performed
+    # (presence of a key indicates the corresponding role has acted this night).
+    room['night_actions'] = {
+        'mafia_final_chooser': None
+    }
+    # per-player private night reports (e.g., cop result)
+    room['night_reports'] = {}
+    # last night events to be revealed during day (killed list and muted)
+    room['last_night_events'] = {'killed': [], 'muted': None}
+
+    # Decide who may finalize the mafia kill this night (priority: godfather, then framer, else one random mafia)
+    try:
+        # find godfather alive
+        godf = next((p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('godfather') != -1 and p not in room.get('eliminated_players', [])), None)
+        if godf:
+            room['night_actions']['mafia_final_chooser'] = godf
+        else:
+            # framer if present will pick in its phase; but if no godfather, framer may be allowed to be finalizer — pick framer if alive
+            framer = next((p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('framer') != -1 and p not in room.get('eliminated_players', [])), None)
+            if framer:
+                room['night_actions']['mafia_final_chooser'] = framer
+            else:
+                # pick one alive mafia at random deterministically using player list order
+                mafs = _alive_of_faction(room, 'mafia')
+                if mafs:
+                    # choose first alive mafia deterministically
+                    room['night_actions']['mafia_final_chooser'] = sorted(mafs)[0]
+                else:
+                    room['night_actions']['mafia_final_chooser'] = None
+    except Exception:
+        room['night_actions']['mafia_final_chooser'] = None
+
+    # After initializing, auto-advance through any steps that should be skipped
+    # Cap iterations to avoid infinite loops in case of logic problems
+    try:
+        max_iters = len(NIGHT_SEQUENCE) + 2
+        iters = 0
+        while _should_auto_advance(room) and iters < max_iters:
+            _advance_night_step(room)
+            iters += 1
+    except Exception:
+        # On any unexpected error, leave the night_step as initialized (safe fallback)
+        pass
+
+
+# Define the sequential steps for the night. Each step lists allowed action types.
+NIGHT_SEQUENCE = [
+    {'name': 'mafia', 'actions': ['mafia_final']},
+    {'name': 'framer', 'actions': ['framer_pick']},
+    {'name': 'cop', 'actions': ['cop_check']},
+    {'name': 'doctor', 'actions': ['doctor_save']},
+    {'name': 'bodyguard', 'actions': ['bodyguard_save']},
+    {'name': 'vigilante', 'actions': ['vigilante_kill']},
+    {'name': 'sheriff', 'actions': ['sheriff_mute']},
+]
+
+
+def _current_night_step(room):
+    idx = room.get('night_step', 0) or 0
+    if idx < 0:
+        idx = 0
+    if idx >= len(NIGHT_SEQUENCE):
+        return {'index': idx, 'info': None}
+    return {'index': idx, 'info': NIGHT_SEQUENCE[idx]}
+
+
+def _advance_night_step(room):
+    # Move to next defined night step; if past last step, remain at last (host may call start-day)
+    idx = room.get('night_step', 0) or 0
+    if idx < len(NIGHT_SEQUENCE) - 1:
+        room['night_step'] = idx + 1
+        return True
+    return False
+
+
+def _alive_of_faction(room, faction_name):
+    return [p for p in _alive_players(room) if (room.get('assignment_factions', {}).get(p) or get_faction_for_role(room.get('assignments', {}).get(p, '')) or '').lower() == faction_name.lower()]
+
+
+def _any_alive_with_role_keyword(room, keyword):
+    key = keyword.lower()
+    for p, r in room.get('assignments', {}).items():
+        if p in room.get('eliminated_players', []):
+            continue
+        if (r or '').lower().find(key) != -1:
+            return True
+    return False
+
+
+def _should_auto_advance(room):
+    """Decide whether to auto-advance to the next night step based on submitted actions and alive roles."""
+    step = _current_night_step(room)
+    info = step.get('info')
+    if not info:
+        return False
+    name = info.get('name')
+    actions = room.get('night_actions', {})
+
+    # mafia step: advance if no mafia exist, mafia_final exists OR (no godfather alive and framer set)
+    if name == 'mafia':
+        # if there are no mafias alive, skip mafia step
+        maf_alive = _alive_of_faction(room, 'mafia')
+        if not maf_alive:
+            return True
+        # if mafia_final key present -> done (treat explicit "no kill" as an act)
+        if 'mafia_final' in actions:
+            return True
+        # if godfather alive, wait for mafia_final
+        godf = next((p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('godfather') != -1 and p not in room.get('eliminated_players', [])), None)
+        if godf:
+            return False
+        # no godfather alive: framer may choose or use suggestions
+        if 'framer_pick' in actions:
+            return True
+        return False
+        return False
+
+    # framer step: advance when framer_pick present or no framer alive
+    if name == 'framer':
+        if 'framer_pick' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'framer'):
+            return True
+        return False
+
+    # cop step
+    if name == 'cop':
+        if 'cop_check' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'cop') and not _any_alive_with_role_keyword(room, 'sheriff') and not _any_alive_with_role_keyword(room, 'detective'):
+            return True
+        return False
+
+    # doctor step
+    if name == 'doctor':
+        # consider explicit doctor_save presence (including None) as acted so doctor isn't re-prompted when they choose "no save"
+        if 'doctor_save' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'doctor') and not _any_alive_with_role_keyword(room, 'medic'):
+            return True
+        return False
+
+    # bodyguard
+    if name == 'bodyguard':
+        # treat explicit choice (including None meaning "no protect") as acted
+        if 'bodyguard_save' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'bodyguard') and not _any_alive_with_role_keyword(room, 'guard'):
+            return True
+        return False
+
+    # vigilante
+    if name == 'vigilante':
+        if 'vigilante_kill' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'vigilante'):
+            return True
+        return False
+
+    # sheriff
+    if name == 'sheriff':
+        if 'sheriff_mute' in actions:
+            return True
+        if not _any_alive_with_role_keyword(room, 'sheriff'):
+            return True
+        return False
+
+    return False
+
+
+def _auto_advance_until_valid(room):
+    """Advance night_step while the current step should be auto-skipped.
+    Bounded loop to avoid infinite advancement in case of logic errors.
+    """
+    try:
+        max_iters = len(NIGHT_SEQUENCE) + 3
+        iters = 0
+        # keep advancing while current step indicates it should auto-advance
+        while _should_auto_advance(room) and iters < max_iters:
+            _advance_night_step(room)
+            iters += 1
+    except Exception:
+        # silently ignore errors and leave room state as-is
+        pass
+
+
+def _resolve_night_actions(room):
+    """Resolve night actions deterministically and update room state.
+    Returns a dict with keys: 'killed' (list), 'muted' (player or None).
+    Rules:
+    - Only consider actions whose keys are present in room['night_actions'].
+    - If an action key exists with value None, that means the role explicitly chose to do nothing.
+    - Doctor save prevents death of the saved target.
+    - Bodyguard protecting a target causes the bodyguard to die instead of the target (if bodyguard exists and alive).
+    - Multiple kill attempts can target the same player; doctor can save to prevent death.
+    - Only alive players may be targeted; invalid targets are ignored.
+    """
+    actions = room.get('night_actions', {}) or {}
+    alive = set(_alive_players(room))
+
+    # helper to normalize target presence and validity
+    def valid_target(key):
+        if key not in actions:
+            return None
+        t = actions.get(key)
+        if not t:
+            return None
+        # only accept if currently alive
+        return t if t in alive else None
+
+    # Determine attempted kills
+    attempts = []  # list of (source, target)
+    # mafia kill: only if key present and target valid
+    mafia_target = valid_target('mafia_final')
+    if mafia_target:
+        attempts.append(('mafia', mafia_target))
+
+    vigilante_target = valid_target('vigilante_kill')
+    if vigilante_target:
+        attempts.append(('vigilante', vigilante_target))
+
+    # Doctor save: may be present with None (explicit no-save) or a valid target
+    doctor_save = None
+    if 'doctor_save' in actions:
+        ds = actions.get('doctor_save')
+        if ds and ds in alive:
+            doctor_save = ds
+        else:
+            doctor_save = None
+
+    # Bodyguard protection (may be explicit None)
+    bodyguard_save = None
+    if 'bodyguard_save' in actions:
+        bg = actions.get('bodyguard_save')
+        if bg and bg in alive:
+            bodyguard_save = bg
+        else:
+            bodyguard_save = None
+
+    # find the bodyguard player's name (first alive with role name containing 'bodyguard' or 'guard')
+    bodyguard_name = None
+    for p, r in room.get('assignments', {}).items():
+        if p in room.get('eliminated_players', []):
+            continue
+        if (r or '').lower().find('bodyguard') != -1 or (r or '').lower().find('guard') != -1:
+            bodyguard_name = p
+            break
+
+    deaths = []
+    for source, target in attempts:
+        if not target:
+            continue
+        # doctor saves
+        if doctor_save and target == doctor_save:
+            continue
+        # bodyguard protection
+        if bodyguard_save and target == bodyguard_save and bodyguard_name and bodyguard_name not in room.get('eliminated_players', []):
+            # bodyguard dies instead of target
+            if bodyguard_name not in deaths:
+                deaths.append(bodyguard_name)
+            continue
+        # otherwise target dies
+        if target not in deaths:
+            deaths.append(target)
+
+    # Filter out already eliminated (safety)
+    deaths = [d for d in deaths if d and d not in room.get('eliminated_players', [])]
+
+    # Apply eliminations
+    for d in deaths:
+        room.setdefault('eliminated_players', []).append(d)
+
+    # muted target if present
+    muted = actions.get('sheriff_mute') if 'sheriff_mute' in actions else None
+
+    # Persist night_reports were already handled by cop action; leave as-is
+    room['last_night_events'] = {'killed': deaths, 'muted': muted}
+
+    # check win condition and set phase accordingly will be done by caller
+    return {'killed': deaths, 'muted': muted}
+
+
+def _start_game(room):
+    room['game_started'] = True
+    room['eliminated_players'] = []
+    room['phase'] = 'lobby'
+    room['game_over'] = False
+    room['winner'] = None
+
+
+def _get_requesting_player(room):
+    requester = request.cookies.get('player_name')
+    if not requester:
+        device_id = get_device_id()
+        for p in room.get('players', []):
+            if p.get('device_id') == device_id:
+                requester = p['name']
+                break
+    return requester
+
+
+def _role_of(room, player_name):
+    return room.get('assignments', {}).get(player_name)
+
+
+def _faction_of_role(room, role_name):
+    # prefer assignment_factions if present
+    if 'assignment_factions' in room:
+        for p, r in room.get('assignments', {}).items():
+            pass
+    return get_faction_for_role(role_name)
+
+
+def _alive_players(room):
+    return [p['name'] for p in room.get('players', []) if p['name'] not in room.get('eliminated_players', [])]
+
+
+def _count_alive_by_faction(room, faction_name):
+    alive = _alive_players(room)
+    c = 0
+    for a in alive:
+        f = room.get('assignment_factions', {}).get(a) or get_faction_for_role(room.get('assignments', {}).get(a))
+        if f and f.lower() == faction_name.lower():
+            c += 1
+    return c
+
+
+def _check_win_condition(room):
+    # villagers win if no mafias left
+    mafias = _count_alive_by_faction(room, 'mafia')
+    villagers = len(_alive_players(room)) - mafias
+    if mafias == 0:
+        return 'villagers'
+    # mafias win if mafias >= villagers
+    if mafias >= max(1, villagers):
+        return 'mafia'
+    return None
+
+
+
+@app.route('/api/rooms/<room_name>/lynch', methods=['POST'])
+def api_lynch(room_name):
+    """Host/moderator submits the lynch result at end of day. Accepts 'player_name' to kill and optional 'suicide_target'
+    if the lynched player is a suicide bomber, the suicide_target (if provided) will also die.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    player_name = request.form.get('player_name', '').strip()
+    suicide_target = request.form.get('suicide_target', '').strip() or None
+
+    if not player_name:
+        return jsonify({'error': 'player_name is required'}), 400
+
+    with lock:
+        if player_name in room.get('eliminated_players', []):
+            return jsonify({'error': 'Player already eliminated'}), 400
+
+        # ensure player exists
+        if not any(p['name'] == player_name for p in room.get('players', [])):
+            return jsonify({'error': 'Player not found in room'}), 404
+
+        # eliminate the lynched player
+        room.setdefault('eliminated_players', []).append(player_name)
+
+        # handle suicide bomber
+        role = room.get('assignments', {}).get(player_name, '') or ''
+        if role.lower().find('suicide') != -1 or role.lower().find('bomber') != -1:
+            if suicide_target and suicide_target not in room.get('eliminated_players', []):
+                # ensure target exists and is alive
+                if any(p['name'] == suicide_target for p in room.get('players', [])):
+                    room.setdefault('eliminated_players', []).append(suicide_target)
+
+        # record daytime event
+        room['last_day_events'] = {'lynched': player_name, 'suicide_killed': suicide_target}
+
+        # check win condition
+        winner = _check_win_condition(room)
+        if winner:
+            room['game_over'] = True
+            room['winner'] = winner
+            room['phase'] = 'finished'
+
+    return jsonify({'success': True, 'lynched': player_name, 'suicide_killed': suicide_target, 'winner': room.get('winner')})
+
+
+@app.route('/api/rooms/<room_name>/start-game', methods=['POST'])
+def api_start_game(room_name):
+    """Host starts the game: mark game started and move to first night."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        # require assignments to exist
+        if not room.get('assignments'):
+            return jsonify({'error': 'Roles not assigned'}), 400
+        # Mark game as started and immediately enter the first night
+        _start_game(room)
+        # Initialize night state so Start Game behaves as before and enters night phase
+        _init_night_state(room)
+
+    return jsonify({'success': True, 'phase': room.get('phase')})
+
+
+@app.route('/api/rooms/<room_name>/start-night', methods=['POST'])
+def api_start_night(room_name):
+    """Host triggers transition to night: clear previous night state and start new night."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        if room.get('game_over'):
+            return jsonify({'error': 'Game already over'}), 400
+        _init_night_state(room)
+
+    return jsonify({'success': True, 'phase': 'night'})
+
+
+@app.route('/api/rooms/<room_name>/advance-night-step', methods=['POST'])
+def api_advance_night_step(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        if room.get('phase') != 'night':
+            return jsonify({'error': 'Not in night phase'}), 400
+
+        # ensure night_step is set to a valid step (skip steps for roles that don't exist)
+        _auto_advance_until_valid(room)
+        advanced = _advance_night_step(room)
+        return jsonify({'success': True, 'advanced': advanced, 'night_step': room.get('night_step')})
+
+
+@app.route('/api/rooms/<room_name>/start-day', methods=['POST'])
+def api_start_day(room_name):
+    """Host resolves night actions and moves to day; reveals killed players and muted player."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        if room.get('phase') != 'night':
+            return jsonify({'error': 'Not in night phase'}), 400
+
+        # Resolve night actions via helper
+        actions = room.get('night_actions', {})
+        framer_pick = actions.get('framer_pick')
+
+        resolved = _resolve_night_actions(room)
+        deaths = resolved.get('killed', [])
+        muted = resolved.get('muted')
+
+        # generate private reports (cop) — if cop action was taken it should already have been persisted in api_night_action,
+        # but ensure cop result exists if cop_check key present
+        room['night_reports'] = room.get('night_reports', {})
+        cop_target = actions.get('cop_check') if 'cop_check' in actions else None
+        if cop_target:
+            role = room.get('assignments', {}).get(cop_target)
+            revealed = ''
+            if role and role.lower().find('godfather') != -1:
+                revealed = 'Villager'
+            elif framer_pick and cop_target == framer_pick:
+                revealed = 'Mafia'
+            else:
+                revealed = room.get('assignment_factions', {}).get(cop_target) or get_faction_for_role(role) or 'Unknown'
+
+            cop_players = [p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('cop') != -1 or (r or '').lower().find('sheriff') != -1]
+            for cp in cop_players:
+                room.setdefault('night_reports', {})[cp] = {'checked': cop_target, 'result': revealed}
+
+        # check for win condition
+        winner = _check_win_condition(room)
+        if winner:
+            room['game_over'] = True
+            room['winner'] = winner
+            room['phase'] = 'finished'
+        else:
+            room['phase'] = 'day'
+
+    return jsonify({'success': True, 'killed': deaths, 'muted': actions.get('sheriff_mute'), 'phase': room.get('phase'), 'winner': room.get('winner')})
+
+
+@app.route('/api/rooms/<room_name>/action', methods=['POST'])
+def api_night_action(room_name):
+    """Submit a night action for the requesting player. Actions vary by role:
+    action_type: mafia_final|framer_pick|doctor_save|cop_check|vigilante_kill|bodyguard_save|sheriff_mute
+    target: player name or empty for none
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    with lock:
+        if room.get('phase') != 'night':
+            return jsonify({'error': 'Not in night phase'}), 400
+
+        requester = _get_requesting_player(room)
+        if not requester:
+            return jsonify({'error': 'Unauthorized - must be a player in the room'}), 403
+        if requester in room.get('eliminated_players', []):
+            return jsonify({'error': 'Eliminated players cannot act'}), 400
+
+        role = room.get('assignments', {}).get(requester, '')
+        action_type = request.form.get('action_type', '').strip()
+        target = request.form.get('target', '').strip() or None
+
+        actions = room.setdefault('night_actions', {})
+
+        # Enforce sequential night step: only allow actions that belong to the current night step
+        step = _current_night_step(room)
+        info = step.get('info')
+        if info:
+            allowed = info.get('actions', [])
+            # allow the designated mafia_final_chooser to submit mafia_final even if the current
+            # step isn't the mafia step (e.g., chooser is a Framer who acts in the framer step)
+            chooser = room.get('night_actions', {}).get('mafia_final_chooser')
+            if action_type not in allowed:
+                if not (action_type == 'mafia_final' and chooser and requester == chooser):
+                    return jsonify({'error': f'Action not allowed at this night step ({info.get("name")})'}), 400
+
+        # Validate target must be alive unless action allows otherwise
+        if target and target not in _alive_players(room):
+            return jsonify({'error': 'Target not found or not alive'}), 400
+
+        # Role-based permission checks
+        lowrole = (role or '').lower()
+        if action_type == 'mafia_final':
+            # only the designated mafia_final_chooser may finalize
+            chooser = room.get('night_actions', {}).get('mafia_final_chooser')
+            if chooser and requester != chooser:
+                return jsonify({'error': 'Only the designated mafia chooser may make the final mafia kill choice'}), 403
+            # If no chooser set, only allow if requester is mafia
+            if not chooser:
+                if (room.get('assignment_factions', {}).get(requester) or get_faction_for_role(role) or '').lower() != 'mafia':
+                    return jsonify({'error': 'Only mafias may select the final kill'}), 403
+            # record the choice explicitly (key presence means acted; value may be None for no kill)
+            actions['mafia_final'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        if action_type == 'framer_pick':
+            if lowrole.find('framer') == -1:
+                return jsonify({'error': 'Only Framer may perform this action'}), 403
+            actions['framer_pick'] = target
+            # If no godfather, framer becomes mafia_final chooser
+            godf = next((p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('godfather') != -1 and p not in room.get('eliminated_players', [])), None)
+            if not godf:
+                # If there is no godfather alive, the framer may act as the mafia final chooser.
+                # Do NOT record the mafia_final kill here (framer's chosen target is only for framing).
+                # Instead, mark the framer as the mafia_final_chooser so they (the framer) may submit
+                # the actual mafia_final action during their step (or immediately if client allows).
+                room.setdefault('night_actions', {})['mafia_final_chooser'] = requester
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        if action_type == 'doctor_save':
+            if lowrole.find('doctor') == -1 and lowrole.find('medic') == -1:
+                return jsonify({'error': 'Only Doctor/Medic may perform this action'}), 403
+            # allow explicit None to represent choosing not to save anyone
+            actions['doctor_save'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        if action_type == 'cop_check':
+            if lowrole.find('cop') == -1 and lowrole.find('sheriff') == -1 and lowrole.find('detective') == -1:
+                return jsonify({'error': 'Only Cop/Sheriff/Detective may perform this action'}), 403
+            actions['cop_check'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+
+            # Build immediate cop result according to same rules used on start-day
+            role = room.get('assignments', {}).get(target)
+            framer_pick = room.get('night_actions', {}).get('framer_pick')
+            revealed = ''
+            if role and role.lower().find('godfather') != -1:
+                revealed = 'Villager'
+            elif framer_pick and target == framer_pick:
+                revealed = 'Mafia'
+            else:
+                revealed = room.get('assignment_factions', {}).get(target) or get_faction_for_role(role) or 'Unknown'
+
+            # attach to night_reports for persistence
+            cop_players = [p for p, r in room.get('assignments', {}).items() if (r or '').lower().find('cop') != -1 or (r or '').lower().find('sheriff') != -1]
+            for cp in cop_players:
+                room.setdefault('night_reports', {})[cp] = {'checked': target, 'result': revealed}
+
+            return jsonify({'success': True, 'cop_result': {'checked': target, 'result': revealed}})
+
+        if action_type == 'vigilante_kill':
+            if lowrole.find('vigilante') == -1:
+                return jsonify({'error': 'Only Vigilante may perform this action'}), 403
+            actions['vigilante_kill'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        if action_type == 'bodyguard_save':
+            if lowrole.find('bodyguard') == -1 and lowrole.find('guard') == -1:
+                return jsonify({'error': 'Only Bodyguard may perform this action'}), 403
+            # allow empty target meaning choose not to protect
+            actions['bodyguard_save'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        if action_type == 'sheriff_mute':
+            # sheriff role allowed too
+            # allow sheriff to mute; presence of key indicates action taken
+            actions['sheriff_mute'] = target
+            if _should_auto_advance(room):
+                _advance_night_step(room)
+            return jsonify({'success': True})
+
+        return jsonify({'error': 'Unknown action or not permitted for your role'}), 400
+
+        # unreachable
+
+
+
+@app.route('/api/rooms/<room_name>/game-state', methods=['GET'])
+def api_game_state(room_name):
+    """Return a tailored view of the current game state for clients.
+    Includes phase, last night events (for day), visible roles, night reports for the requester, alive players, and assignments only when appropriate.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    with lock:
+        # ensure clients see a valid night step by auto-advancing past absent-role steps
+        if room.get('phase') == 'night':
+            _auto_advance_until_valid(room)
+        data = {
+            'phase': room.get('phase', 'lobby'),
+            'night_step': room.get('night_step'),
+            'last_night_events': room.get('last_night_events', {}),
+            'alive_players': _alive_players(room),
+            'game_started': room.get('game_started', False),
+            'game_over': room.get('game_over', False),
+            'winner': room.get('winner')
+        }
+
+        # include human-friendly current night step info
+        nstep = _current_night_step(room)
+        if nstep and nstep.get('info'):
+            data['current_night_step'] = {'index': nstep.get('index'), 'name': nstep.get('info').get('name'), 'actions': nstep.get('info').get('actions')}
+        else:
+            data['current_night_step'] = None
+
+        requester = _get_requesting_player(room)
+        # include visible role info same as api_players
+        visible = []
+        if room.get('game_started') and requester and requester in room.get('assignments', {}):
+            assignment_factions = room.get('assignment_factions', {})
+            requester_faction = assignment_factions.get(requester) or get_faction_for_role(room['assignments'].get(requester))
+            if requester_faction and requester_faction.lower() == 'mafia':
+                for player_name, assigned_role in room.get('assignments', {}).items():
+                    pf = room.get('assignment_factions', {}).get(player_name) or get_faction_for_role(assigned_role)
+                    if pf and pf.lower() == 'mafia':
+                        visible.append({'name': player_name, 'role': assigned_role, 'faction': pf})
+        data['visible_roles'] = visible
+
+        # include night_reports for the requester if present
+        if requester and room.get('night_reports') and requester in room.get('night_reports'):
+            data['night_report'] = room['night_reports'][requester]
+
+        # If requester is mafia, include mafia_final and who may finalize (private to mafias)
+        try:
+            requester_faction = room.get('assignment_factions', {}).get(requester) or get_faction_for_role(room.get('assignments', {}).get(requester, ''))
+            if requester and requester_faction and requester_faction.lower() == 'mafia':
+                na = room.get('night_actions', {})
+                data['mafia_final'] = na.get('mafia_final')
+                data['mafia_final_chooser'] = na.get('mafia_final_chooser')
+            else:
+                data['mafia_final'] = None
+                data['mafia_final_chooser'] = None
+        except Exception:
+            data['mafia_final'] = None
+            data['mafia_final_chooser'] = None
+
+    return jsonify(data)
+
+
+
 @app.route('/api/factions', methods=['GET'])
 def api_factions():
     return jsonify({'factions': factions_map})
@@ -576,11 +1300,55 @@ def api_restart(room_name):
         return jsonify({'error': 'Unauthorized'}), 403
 
     with lock:
-        # Keep players and roles intact; clear assignments and eliminated players and mark not started
+        # Keep players and roles intact; clear assignments and per-game ephemeral state but keep players and roles
+        # Capture eliminated players so we can notify them (spectators) before clearing the list
+        eliminated_before = list(room.get('eliminated_players', []))
         room['assignments'].clear()
         room['eliminated_players'] = []
         room['assignment_factions'] = {}
         room['game_started'] = False
+        # reset phase and night-related state
+        room['phase'] = 'lobby'
+        room['game_over'] = False
+        room['winner'] = None
+        # remove/clear night-specific containers so a fresh night can be started cleanly
+        room.pop('night_actions', None)
+        room.pop('night_reports', None)
+        room.pop('last_night_events', None)
+        room.pop('last_day_events', None)
+        room.pop('night_step', None)
+
+        # If there were eliminated spectators, push a server 'kick' chat message for each so
+        # their waiting-room page can detect it and redirect them back to the lobby/home page.
+        if eliminated_before:
+            # ensure chat containers exist
+            room.setdefault('chat', [])
+            if 'chat_next_id' not in room:
+                room['chat_next_id'] = 1
+            if 'chat_colors' not in room:
+                room['chat_colors'] = {}
+            # ensure a color for server/system messages
+            if 'Server' not in room['chat_colors']:
+                room['chat_colors']['Server'] = 'hsl(210,20%,70%)'
+
+            for p in eliminated_before:
+                mid = room.get('chat_next_id', 1)
+                room['chat_next_id'] = mid + 1
+                msg = {
+                    'id': mid,
+                    'sender': 'Server',
+                    'text': f'Returning eliminated players to lobby: {p}',
+                    'ts': int(time.time()),
+                    'client_id': None,
+                    'color': room['chat_colors'].get('Server'),
+                    # extra metadata that client-side SSE handlers look for
+                    'type': 'kick',
+                    'target': p
+                }
+                room['chat'].append(msg)
+            # trim chat history
+            if len(room['chat']) > 1000:
+                room['chat'] = room['chat'][-1000:]
 
     return jsonify({'success': True})
 
@@ -935,6 +1703,11 @@ def find_free_port(preferred=5051):
             return s.getsockname()[1]
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5051))
-    print(f"Starting Mafia server on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)  # debug=False for production
+    # If running under the test harness, don't start the dev server here.
+    # Tests should set PYTEST_RUNNING=1 in the environment to indicate this.
+    if os.environ.get('PYTEST_RUNNING'):
+        print("Detected PYTEST_RUNNING environment; skipping app.run() to allow test import")
+    else:
+        port = int(os.environ.get("PORT", 5051))
+        print(f"Starting Mafia server on port {port}")
+        app.run(host="0.0.0.0", port=port, debug=False)  # debug=False for production

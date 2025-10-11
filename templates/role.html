@@ -193,6 +193,41 @@
     .faction-unknown { background: #374151; color: #f1f5f9; }
     /* Unified faction color on player screen */
     .faction-unified { background: #2563eb; }
+    /* Night target tile styles */
+    .target-tile {
+      background: #071020;
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 8px;
+      padding: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: stretch;
+      transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease;
+    }
+    .target-tile.clickable { cursor: pointer; }
+    .target-tile.clickable:hover { transform: translateY(-4px); box-shadow: 0 8px 26px rgba(2,6,23,0.6); }
+    .target-tile.disabled { opacity: 0.55; cursor: not-allowed; }
+    .target-tile .player-name { font-weight:700; }
+    .target-tile .tile-actions { display:flex; gap:0.5rem; }
+    .target-tile .checkmark {
+      position: relative;
+    }
+    .tile-checkmark-badge {
+      position: absolute;
+      right: 6px;
+      top: 6px;
+      background: #10b981;
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      box-shadow: 0 4px 14px rgba(16,185,129,0.16);
+    }
   </style>
 </head>
 <body>
@@ -217,6 +252,9 @@
       {{ description | e }}
     </div>
 
+    <!-- Mafia coordination removed: mafia_final is handled by a single chooser (godfather/framer/random mafia)
+         UI will prompt the designated chooser to submit mafia_final when appropriate. -->
+
     <!-- Visible teammates (e.g., mafias see other mafias) -->
     <div id="visibleTeammatesSection" style="display:none; margin-top:1rem;">
       <div class="roles-header">🕵️‍♂️ Teammates you can see</div>
@@ -235,6 +273,24 @@
     <div class="last-updated" id="lastUpdated">Last checked: —</div>
   </div>
 
+  <div style="position:fixed; left:1rem; bottom:1rem; color:#94a3b8; font-size:0.9rem;" id="nightStepIndicator"> </div>
+
+  <!-- Night action modal: replaced select with clickable player tiles -->
+  <div id="nightModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1200;">
+    <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:640px; max-width:95%; border:1px solid rgba(255,255,255,0.04);">
+      <h3 id="nightModalTitle" style="margin:0 0 0.5rem 0; color:#f1f5f9;">Night Action</h3>
+      <div style="margin-bottom:0.5rem;">
+        <label class="small">Choose target</label>
+        <div id="nightTargets" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:8px; margin-top:0.5rem; max-height:360px; overflow:auto; padding-right:6px;"></div>
+      </div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button class="btn" onclick="closeNightModal()">Close</button>
+        <!-- backup submit button (hidden) kept for compatibility with older flows -->
+        <button class="btn btn-primary" id="nightSubmitBtn" style="display:none;" onclick="submitNightAction()">Submit</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Elimination overlay -->
   <div class="elimination-overlay" id="eliminationOverlay">
     <div class="elimination-message">
@@ -247,6 +303,18 @@
       <button class="btn btn-primary" onclick="window.location.href='/watch/' + encodeURIComponent(ROOM_NAME)" style="margin-top: 1rem;">
         Continue Watching
       </button>
+    </div>
+  </div>
+
+  <!-- Action confirmation modal -->
+  <div id="actionConfirmModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1220;">
+    <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:420px; border:1px solid rgba(255,255,255,0.04);">
+      <h3 id="actionConfirmTitle" style="margin:0 0 0.5rem 0; color:#f1f5f9;">Confirm Action</h3>
+      <div id="actionConfirmText" style="margin-bottom:0.75rem; color:#cbd5e1;"></div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button class="btn" onclick="closeActionConfirm()">Cancel</button>
+        <button class="btn btn-danger" id="confirmActionBtn">Confirm</button>
+      </div>
     </div>
   </div>
 
@@ -422,6 +490,234 @@
     // Check elimination status immediately and then every 3 seconds
     checkEliminationStatus();
     setInterval(checkEliminationStatus, 3000);
+
+  // Night action handling
+  let lastKnownPhase = null;
+  let lastKnownNightIndex = null;
+  let pendingActionType = null;
+
+    function closeNightModal() {
+      document.getElementById('nightModal').style.display = 'none';
+    }
+
+    async function submitNightAction() {
+      // Legacy single-submit fallback (kept for compatibility)
+      const target = document.getElementById('nightTarget') ? (document.getElementById('nightTarget').value || '') : '';
+      if (!pendingActionType) { alert('No action in progress'); return; }
+      await submitNightActionTo(target, pendingActionType);
+    }
+
+    // Submit an action to the server for the given target and actionType.
+    async function submitNightActionTo(target, actionType) {
+      if (!actionType) { alert('No action type specified'); return; }
+      try {
+        const body = `action_type=${encodeURIComponent(actionType)}&target=${encodeURIComponent(target || '')}`;
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/action`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        const d = await resp.json();
+        if (d.success) {
+          showToast('Action submitted', 1000);
+          if (d.cop_result) {
+            const r = d.cop_result;
+            alert(`Investigation result:\n${r.checked} → ${r.result}`);
+          }
+          // close modal and clear pending action
+          closeNightModal();
+          pendingActionType = null;
+          // mark target tile acted and disable its buttons
+          try {
+            const targetsEl = document.getElementById('nightTargets');
+            if (targetsEl) {
+              const tiles = Array.from(targetsEl.querySelectorAll('.target-tile'));
+              for (const t of tiles) {
+                const n = t.querySelector('div') && t.querySelector('div').textContent && t.querySelector('div').textContent.trim();
+                if (n === target) {
+                  t.classList.add('disabled');
+                  // add checkmark badge
+                  if (!t.querySelector('.tile-checkmark-badge')) {
+                    const cb = document.createElement('div'); cb.className = 'tile-checkmark-badge'; cb.textContent = '✓';
+                    // position relative container
+                    t.style.position = 'relative';
+                    t.appendChild(cb);
+                  }
+                  // disable buttons inside
+                  t.querySelectorAll('button').forEach(b => b.disabled = true);
+                }
+              }
+            }
+          } catch (e) { /* ignore UI update errors */ }
+        } else {
+          alert('Action failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('submitNightActionTo error', e);
+        alert('Error submitting action');
+      }
+    }
+
+    function openActionConfirm(target, actionType, onConfirm) {
+      const title = document.getElementById('actionConfirmTitle');
+      const text = document.getElementById('actionConfirmText');
+      title.textContent = 'Confirm ' + (actionType || '').replace(/_/g,' ').replace(/\b\w/g, c=>c.toUpperCase());
+      text.textContent = `Are you sure you want to ${ (actionType||'').replace(/_/g,' ') } ${target || ''}? This cannot be undone.`;
+      document.getElementById('actionConfirmModal').style.display = 'flex';
+      const confirmBtn = document.getElementById('confirmActionBtn');
+      // remove previous handler
+      confirmBtn.onclick = null;
+      confirmBtn.onclick = () => {
+        try { onConfirm && onConfirm(); } catch(e) { console.warn('confirm callback error', e); }
+        closeActionConfirm();
+      };
+    }
+
+    function closeActionConfirm() {
+      document.getElementById('actionConfirmModal').style.display = 'none';
+    }
+
+    // Mafia coordination removed: mafia_final is handled by a single chooser server-side.
+
+    async function checkGamePhaseForActions() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/game-state`, { cache: 'no-store' });
+        const gs = await resp.json();
+        if (!gs) return;
+        // Show current night step indicator
+        try {
+          const stepEl = document.getElementById('nightStepIndicator');
+          if (gs.phase === 'night' && gs.current_night_step) {
+            stepEl.textContent = 'Night step: ' + (gs.current_night_step.name || '(unknown)');
+          } else {
+            stepEl.textContent = '';
+          }
+        } catch(e) {}
+
+  // If phase changed to night (entered) or the night_step changed, and player has an actionable role for that step, prompt
+  const stepChanged = (gs.phase === 'night' && lastKnownPhase !== 'night') || (gs.phase === 'night' && gs.current_night_step && gs.current_night_step.index !== lastKnownNightIndex);
+        if (gs.phase === 'night') {
+          // update mafia panel visibility and contents for mafia players
+          // mafia coordination UI removed; however mafias still see visible teammates via visible_roles
+
+          if (stepChanged) {
+          // determine player's role from DOM
+          const role = document.getElementById('roleBadge').textContent || '';
+          const low = role.toLowerCase();
+          const alivePlayersResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+          const pdata = await alivePlayersResp.json();
+          const alive = pdata.players.filter(p => !(pdata.eliminated_players||[]).includes(p));
+          // determine what actions this player may perform for the current night step
+          pendingActionType = null;
+          const step = gs.current_night_step;
+          if (step && step.actions && step.actions.length) {
+            const acts = step.actions;
+            // map role keywords to action types and only allow if included in acts
+            const roleActionMap = [
+              {check: ['doctor','medic'], action: 'doctor_save'},
+              {check: ['cop','sheriff','detective'], action: 'cop_check'},
+              {check: ['vigilante'], action: 'vigilante_kill'},
+              {check: ['bodyguard','guard'], action: 'bodyguard_save'},
+              {check: ['framer'], action: 'framer_pick'},
+              // mafia finalize: only the designated chooser should be allowed to perform mafia_final
+              {check: ['godfather','framer','mafia'], action: 'mafia_final'}
+            ];
+
+            for (const m of roleActionMap) {
+              for (const kw of m.check) {
+                if (low.includes(kw)) {
+                  if (acts.includes(m.action)) {
+                    // For mafia_final, verify chooser if server indicates one
+                    if (m.action === 'mafia_final') {
+                      // ask server whether this player is allowed to finalize (mafia_final_chooser)
+                      try {
+                        const gsChooser = gs.mafia_final_chooser;
+                        if (gsChooser && gsChooser !== PLAYER_NAME) {
+                          // not the chooser, skip
+                          continue;
+                        }
+                        // if no chooser specified, allow mafias by default (server will double-check)
+                      } catch(e) { /* ignore */ }
+                    }
+                    pendingActionType = m.action;
+                    break;
+                  }
+                }
+              }
+              if (pendingActionType) break;
+            }
+          }
+
+          if (pendingActionType) {
+            // populate clickable target tiles (sorted)
+            const targetsEl = document.getElementById('nightTargets');
+            targetsEl.innerHTML = '';
+            const sorted = alive.slice().sort((a,b)=> a.localeCompare(b));
+            for (const p of sorted) {
+              const tile = document.createElement('div');
+              tile.className = 'target-tile';
+              // mark eliminated players as disabled
+              const isElim = (pdata.eliminated_players||[]).includes(p);
+              if (!isElim) tile.classList.add('clickable'); else tile.classList.add('disabled');
+
+              const nameEl = document.createElement('div');
+              nameEl.className = 'player-name';
+              nameEl.textContent = p;
+              tile.appendChild(nameEl);
+
+              const actionsRow = document.createElement('div');
+              actionsRow.className = 'tile-actions';
+
+              // create action buttons depending on pendingActionType
+              function makeBtn(text, cls, onClick) {
+                const b = document.createElement('button');
+                b.className = 'btn';
+                b.style.padding = '0.45rem 0.6rem';
+                b.style.fontSize = '0.9rem';
+                b.style.borderRadius = '8px';
+                b.style.cursor = 'pointer';
+                b.textContent = text;
+                if (cls === 'kill') { b.style.background = '#dc2626'; b.style.color = 'white'; }
+                else if (cls === 'save') { b.style.background = '#059669'; b.style.color = 'white'; }
+                else if (cls === 'check') { b.style.background = '#2563eb'; b.style.color = 'white'; }
+                b.onclick = onClick;
+                return b;
+              }
+
+              const destructive = (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill' || pendingActionType === 'framer_pick');
+              if (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill') {
+                // destructive: confirm first
+                actionsRow.appendChild(makeBtn('Kill', 'kill', () => {
+                  if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType));
+                }));
+              } else if (pendingActionType === 'doctor_save' || pendingActionType === 'bodyguard_save') {
+                actionsRow.appendChild(makeBtn('Save', 'save', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+              } else if (pendingActionType === 'cop_check' || pendingActionType === 'sheriff_mute') {
+                actionsRow.appendChild(makeBtn('Check', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+              } else if (pendingActionType === 'framer_pick') {
+                actionsRow.appendChild(makeBtn('Frame', 'kill', () => { if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType)); }));
+              } else {
+                // generic action button
+                actionsRow.appendChild(makeBtn('Select', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+              }
+
+              tile.appendChild(actionsRow);
+              targetsEl.appendChild(tile);
+            }
+
+            // show appropriate title
+            const title = document.getElementById('nightModalTitle');
+            title.textContent = pendingActionType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            document.getElementById('nightModal').style.display = 'flex';
+          }
+          }
+        }
+  // track last seen night phase and night_step index to detect changes and avoid duplicate prompts
+  lastKnownPhase = gs.phase;
+  lastKnownNightIndex = gs.current_night_step ? gs.current_night_step.index : null;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // Poll game-state for night-phase actions every 2.5s
+    setInterval(checkGamePhaseForActions, 2500);
   </script>
 </body>
 <script>

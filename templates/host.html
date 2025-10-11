@@ -477,6 +477,43 @@
       <button class="btn" id="toggleChatBtn" onclick="toggleHostChat()">Lobby Chat</button>
     </div>
 
+    <div class="panel" id="gameControls">
+      <h3>Moderator Controls</h3>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-success" id="startGameBtn" onclick="startGame()">Start Game</button>
+        <button class="btn" id="startNightBtn" onclick="startNight()">Start Night</button>
+        <button class="btn" id="startDayBtn" onclick="startDay()">Start Day</button>
+        <button class="btn" id="advanceNightBtn" onclick="advanceNightStep()">Advance Night Step</button>
+        <button class="btn btn-danger" id="lynchBtn" onclick="lynchPlayer()">Lynch (End of Day)</button>
+      </div>
+      <div style="margin-top:0.75rem;">
+        <div class="small">Phase: <span id="currentPhase">Lobby</span></div>
+        <div class="small">Night step: <span id="nightStepDisplay">—</span></div>
+        <div class="small">Last night killed: <span id="lastKilled">—</span></div>
+        <div class="small">Last night muted: <span id="lastMuted">—</span></div>
+        <div class="small">Winner: <span id="gameWinner">—</span></div>
+      </div>
+    </div>
+
+    <!-- Lynch Modal -->
+    <div id="lynchModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1200;">
+      <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:320px; border:1px solid rgba(255,255,255,0.04);">
+        <h3 style="margin:0 0 0.5rem 0; color:#f1f5f9;">Submit Lynch</h3>
+        <div style="margin-bottom:0.5rem;">
+          <label class="small">Player to lynch</label>
+          <select id="lynchTarget" style="width:100%; padding:0.5rem; margin-top:0.25rem; border-radius:6px; background:#111827; color:#f1f5f9; border:1px solid #334155;"></select>
+        </div>
+        <div style="margin-bottom:0.75rem;">
+          <label class="small">Suicide bomber target (optional)</label>
+          <select id="lynchSuicideTarget" style="width:100%; padding:0.5rem; margin-top:0.25rem; border-radius:6px; background:#111827; color:#f1f5f9; border:1px solid #334155;"></select>
+        </div>
+        <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+          <button class="btn" onclick="closeLynchModal()">Cancel</button>
+          <button class="btn btn-danger" onclick="submitLynch()">Submit</button>
+        </div>
+      </div>
+    </div>
+
     <p class="small">Share the join link: <code id="joinLink"></code>
       <button id="copyJoinBtn" class="btn btn-secondary btn-copy" onclick="copyJoinLink()">Copy</button>
       <span id="copyStatus" class="copy-status" aria-live="polite"></span>
@@ -580,6 +617,104 @@
       } catch (e) {
         console.error('Error eliminating player:', e);
         alert('Error eliminating player: ' + e.message);
+      }
+    }
+
+    // Moderator actions: start game / night / day / lynch
+    async function startGame() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-game`, { method: 'POST' });
+        const d = await resp.json();
+        if (d.success) {
+          alert('Game started. Night phase initialized.');
+          setTimeout(refresh, 200);
+        } else {
+          alert('Start game failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('startGame error', e);
+        alert('Error starting game');
+      }
+    }
+
+    async function startNight() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-night`, { method: 'POST' });
+        const d = await resp.json();
+        if (d.success) {
+          alert('Night started. Players with night actions may act now.');
+          setTimeout(refresh, 200);
+        } else {
+          alert('Start night failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('startNight error', e);
+        alert('Error starting night');
+      }
+    }
+
+    async function startDay() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-day`, { method: 'POST' });
+        const d = await resp.json();
+        if (d.success) {
+          alert('Day started. Killed players revealed.');
+          setTimeout(refresh, 200);
+        } else {
+          alert('Start day failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('startDay error', e);
+        alert('Error starting day');
+      }
+    }
+
+    async function lynchPlayer() {
+      openLynchModal();
+    }
+
+    function openLynchModal() {
+      // populate selects with alive players
+      const targetSel = document.getElementById('lynchTarget');
+      const suicideSel = document.getElementById('lynchSuicideTarget');
+      targetSel.innerHTML = '';
+      suicideSel.innerHTML = '<option value="">(none)</option>';
+      // gather from current player list
+      const opts = Array.from(document.querySelectorAll('#playerList li')).map(li => {
+        const name = li.querySelector('.player-name').textContent.replace(' 💀','').trim();
+        return { name, eliminated: li.classList.contains('eliminated') };
+      }).filter(p => !p.eliminated);
+
+      for (const p of opts) {
+        const o = document.createElement('option'); o.value = p.name; o.textContent = p.name; targetSel.appendChild(o);
+        const o2 = document.createElement('option'); o2.value = p.name; o2.textContent = p.name; suicideSel.appendChild(o2);
+      }
+
+      document.getElementById('lynchModal').style.display = 'flex';
+    }
+
+    function closeLynchModal() {
+      document.getElementById('lynchModal').style.display = 'none';
+    }
+
+    async function submitLynch() {
+      const name = document.getElementById('lynchTarget').value;
+      const suicide = document.getElementById('lynchSuicideTarget').value || '';
+      if (!name) { alert('Select a player to lynch'); return; }
+      try {
+        const body = `player_name=${encodeURIComponent(name)}&suicide_target=${encodeURIComponent(suicide||'')}`;
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/lynch`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        const d = await resp.json();
+        if (d.success) {
+          showToast(`Lynched ${d.lynched}` + (d.suicide_killed ? ` — suicide killed ${d.suicide_killed}` : ''), 2200);
+          closeLynchModal();
+          setTimeout(refresh, 200);
+        } else {
+          alert('Lynch failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('lynch submit error', e);
+        alert('Error submitting lynch');
       }
     }
 
@@ -1003,7 +1138,7 @@
           playerListEl.appendChild(li);
         }
         
-        // If server provides saved roles and the local inputs are still default/empty, prefill them
+  // If server provides saved roles and the local inputs are still default/empty, prefill them
         try {
           const localRoleNames = Array.from(document.querySelectorAll('.role-name')).map(i => i.value.trim()).filter(Boolean);
           if (data.roles && Array.isArray(data.roles) && data.roles.length && (!localRoleNames.length || (localRoleNames.length === 1 && localRoleNames[0] === ''))) {
@@ -1065,6 +1200,82 @@
         timeEl.textContent = 'Last updated: ' + now.toLocaleTimeString();
       } catch (e) {
         timeEl.textContent = 'Last updated: (error contacting server)';
+      }
+      
+      // fetch game-state to update host controls
+      try {
+        const gsResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/game-state`, { cache: 'no-store' });
+        const gs = await gsResp.json();
+        const phaseEl = document.getElementById('currentPhase');
+        const lastKilledEl = document.getElementById('lastKilled');
+        const lastMutedEl = document.getElementById('lastMuted');
+        const winnerEl = document.getElementById('gameWinner');
+  const nightStepDisplay = document.getElementById('nightStepDisplay');
+
+        if (gs && phaseEl) phaseEl.textContent = gs.phase || '—';
+        if (gs && nightStepDisplay) {
+          if (gs.current_night_step) nightStepDisplay.textContent = (gs.current_night_step.name || '') + (gs.current_night_step.index != null ? ` (step ${gs.current_night_step.index})` : '');
+          else nightStepDisplay.textContent = '—';
+        }
+        if (gs && gs.last_night_events) {
+          lastKilledEl.textContent = (gs.last_night_events.killed && gs.last_night_events.killed.length) ? gs.last_night_events.killed.join(', ') : '—';
+          lastMutedEl.textContent = gs.last_night_events.muted || '—';
+        }
+        if (gs && winnerEl) winnerEl.textContent = gs.winner || '—';
+
+        // enable/disable moderator buttons depending on phase and game state
+        const startGameBtn = document.getElementById('startGameBtn');
+        const startNightBtn = document.getElementById('startNightBtn');
+        const startDayBtn = document.getElementById('startDayBtn');
+        const lynchBtn = document.getElementById('lynchBtn');
+
+        if (gs.game_over) {
+          startGameBtn.disabled = true;
+          startNightBtn.disabled = true;
+          startDayBtn.disabled = true;
+          lynchBtn.disabled = true;
+        } else if (gs.phase === 'lobby' || gs.phase === 'finished') {
+          startGameBtn.disabled = false;
+          startNightBtn.disabled = true;
+          startDayBtn.disabled = true;
+          lynchBtn.disabled = true;
+        } else if (gs.phase === 'night') {
+          startGameBtn.disabled = true;
+          startNightBtn.disabled = true;
+          startDayBtn.disabled = false; // host resolves night to day
+          lynchBtn.disabled = true;
+          // when in night, allow advancing steps manually
+          document.getElementById('advanceNightBtn').disabled = false;
+        } else if (gs.phase === 'day') {
+          startGameBtn.disabled = true;
+          startNightBtn.disabled = false; // start next night after lynch
+          startDayBtn.disabled = true;
+          lynchBtn.disabled = false; // host can submit lynch
+        } else {
+          // default safe state
+          startGameBtn.disabled = false;
+          startNightBtn.disabled = false;
+          startDayBtn.disabled = false;
+          lynchBtn.disabled = false;
+        }
+      } catch (e) {
+        // ignore game-state fetch errors
+      }
+    }
+
+    async function advanceNightStep() {
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/advance-night-step`, { method: 'POST' });
+        const d = await resp.json();
+        if (d.success) {
+          showToast('Advanced night step', 900);
+          setTimeout(refresh, 200);
+        } else {
+          alert('Advance night step failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('advanceNightStep error', e);
+        alert('Error advancing night step');
       }
     }
 
