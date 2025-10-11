@@ -9,6 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mafia Game">
   <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
+  <link rel="stylesheet" href="/static/snazzy.css">
   <style>
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
@@ -425,8 +426,19 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Mafia Host Dashboard <span class="badge" id="gameStatus">Setup</span></h1>
-    <div class="sub">Set up roles and wait for players to join.</div>
+    <div class="panel" style="display:flex;align-items:center;gap:1rem;justify-content:space-between;padding:1rem 1.25rem;">
+      <div style="display:flex;align-items:center;gap:1rem;">
+        <div style="width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#7f1d1d,#3a0710);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1.1rem;">M</div>
+        <div>
+          <div style="font-size:1.25rem;font-weight:900;color:#f7fbff">Mafia Host Dashboard <span class="badge" id="gameStatus">Setup</span></div>
+          <div class="sub">Set up roles and wait for players to join.</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <div class="small">Players Joined</div>
+        <div class="count" id="playerCount">0</div>
+      </div>
+    </div>
     
     <!-- Password Management Section -->
     <div class="password-section">

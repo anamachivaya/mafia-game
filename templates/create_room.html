@@ -4,149 +4,35 @@
   <meta charset="utf-8" />
   <title>Create Room - Mafia Game</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { 
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
-      padding: 2rem; 
-      background: #0f172a; 
-      color: #e2e8f0; 
-      min-height: 100vh;
-      margin: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .container { 
-      max-width: 500px; 
-      width: 100%;
-      background: #1e293b;
-      padding: 3rem;
-      border-radius: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-      border: 1px solid #334155;
-    }
-    h1 { 
-      font-size: 2rem; 
-      color: #f1f5f9; 
-      margin-bottom: 0.5rem;
-      text-align: center;
-    }
-    .subtitle {
-      color: #94a3b8;
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    .form-group {
-      margin-bottom: 1.5rem;
-    }
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-      color: #f1f5f9;
-      font-weight: 600;
-    }
-    input[type="text"], input[type="password"] {
-      width: 100%;
-      padding: 0.75rem;
-      border-radius: 8px;
-      border: 1px solid #475569;
-      background: #374151;
-      color: #f1f5f9;
-      font-size: 1rem;
-      box-sizing: border-box;
-    }
-    input[type="text"]:focus, input[type="password"]:focus {
-      outline: none;
-      border-color: #2563eb;
-      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
-    }
-    input[type="text"]::placeholder, input[type="password"]::placeholder {
-      color: #94a3b8;
-    }
-    .btn { 
-      display: inline-block; 
-      text-decoration: none; 
-      padding: 0.75rem 1.5rem; 
-      font-size: 1rem; 
-      border-radius: 8px; 
-      font-weight: 600; 
-      transition: all 0.2s ease; 
-      border: none;
-      cursor: pointer;
-      width: 100%;
-      margin-bottom: 1rem;
-    }
-    .btn-primary { 
-      background: #059669; 
-      color: white; 
-    }
-    .btn-primary:hover { 
-      background: #047857; 
-    }
-    .btn-secondary { 
-      background: #374151; 
-      color: #e2e8f0; 
-      text-align: center;
-    }
-    .btn-secondary:hover { 
-      background: #4b5563; 
-    }
-    .error {
-      background: #7f1d1d;
-      color: #fca5a5;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1rem;
-      border: 1px solid #dc2626;
-    }
-    .help-text {
-      font-size: 0.9rem;
-      color: #94a3b8;
-      margin-top: 0.5rem;
-    }
-    .back-link {
-      text-align: center;
-      margin-top: 1rem;
-    }
-    /* Make back-link buttons smaller and inline so they don't span full width */
-    .back-link { display:flex; justify-content:flex-start; }
-    .back-link .btn {
-      width: auto !important;
-      display: inline-block;
-      padding: 0.5rem 0.9rem;
-      min-width: 0 !important;
-      margin: 0;
-      font-size: 0.95rem;
-    }
-  </style>
+  <link rel="stylesheet" href="/static/snazzy.css">
 </head>
 <body>
-  <div class="container">
-    <h1>Create Game Room</h1>
-    <p class="subtitle">Set up a new Mafia game for your friends</p>
-    
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
-    
-    <form method="post">
-      <div class="form-group">
+  <div class="wrap fade-in" style="max-width:640px;margin:5vh auto;">
+    <div class="panel">
+      <h1 style="margin-bottom:.25rem">Create Game Room</h1>
+      <div class="sub">Set up a new Mafia game for your friends</div>
+
+      {% if error %}
+      <div class="panel" style="background:#3a0f0f;color:#ffdede;border:1px solid rgba(255,0,0,0.12);">{{ error }}</div>
+      {% endif %}
+
+      <form method="post">
         <label for="room_name">Room Name</label>
         <input type="text" id="room_name" name="room_name" placeholder="Enter a unique room name..." required />
-        <div class="help-text">Choose a memorable name that your players can easily find</div>
-      </div>
-      
-      <div class="form-group">
-        <label for="host_password">Host Password</label>
+        <div class="small">Choose a memorable name that your players can easily find</div>
+
+        <label for="host_password" style="margin-top:1rem">Host Password</label>
         <input type="password" id="host_password" name="host_password" placeholder="Enter host password..." required />
-        <div class="help-text">This password allows you to manage the game as host</div>
+        <div class="small">This password allows you to manage the game as host</div>
+
+        <div style="margin-top:1rem">
+          <button type="submit" class="btn btn-primary">Create Room</button>
+        </div>
+      </form>
+
+      <div style="margin-top:1rem">
+        <a href="{{ url_for('home') }}" class="btn btn-ghost">← Back to Home</a>
       </div>
-      
-      <button type="submit" class="btn btn-primary">Create Room</button>
-    </form>
-    
-    <div class="back-link">
-      <a href="{{ url_for('home') }}" class="btn btn-secondary">← Back to Home</a>
     </div>
   </div>
 </body>
