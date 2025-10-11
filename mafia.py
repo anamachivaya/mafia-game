@@ -18,11 +18,11 @@ roles_data = {}
 factions_map = {}
 lock = Lock()
 
-# Room lifetime (seconds) - Extended to 1 hour
-ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 60 * 60))  # default 1 hour (3600 seconds)
+# Room lifetime (seconds) - Extended to 2 hours
+ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 2 * 60 * 60))  # default 2 hours (7200 seconds)
 
 # Cookie lifetime - Set to match room lifetime for consistency
-COOKIE_TTL = ROOM_TTL  # 1 hour
+COOKIE_TTL = ROOM_TTL  # 2 hours
 
 def load_roles_data():
     """Load a merged roles.json file containing description and faction for each role.
