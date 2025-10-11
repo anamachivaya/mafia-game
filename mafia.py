@@ -402,16 +402,46 @@ def api_players(room_name):
         return jsonify({'error': 'Room not found or expired'}), 404
 
     with lock:
+        # Basic room info
         data = {
             'players': [p['name'] for p in room['players']],
             'count': len(room['players']),
             'password_set': room.get('player_password') is not None,
             'game_started': room.get('game_started', False),
             'assignments': room['assignments'] if room.get('game_started') else {},
-            'eliminated_players': room.get('eliminated_players', []),  # Add this line
+            'eliminated_players': room.get('eliminated_players', []),
             'chat_colors': room.get('chat_colors', {}),
             'roles': room.get('roles', [])
         }
+
+        # Determine the requesting player (prefer player_name cookie, fallback to device mapping)
+        requester = request.cookies.get('player_name')
+        if not requester:
+            device_id = get_device_id()
+            for p in room.get('players', []):
+                if p.get('device_id') == device_id:
+                    requester = p['name']
+                    break
+
+        # Provide visible roles tailored to the requesting player (e.g., mafia see other mafias and their roles)
+        visible = []
+        if data['game_started'] and requester and requester in room.get('assignments', {}):
+            # ensure assignment_factions exists
+            assignment_factions = room.get('assignment_factions', {})
+            requester_faction = assignment_factions.get(requester) or get_faction_for_role(room['assignments'].get(requester))
+
+            if requester_faction and requester_faction.lower() == 'mafia':
+                # collect all players whose assigned faction is Mafia
+                for player_name, assigned_role in room.get('assignments', {}).items():
+                    pf = assignment_factions.get(player_name) or get_faction_for_role(assigned_role)
+                    if pf and pf.lower() == 'mafia':
+                        visible.append({
+                            'name': player_name,
+                            'role': assigned_role,
+                            'faction': pf
+                        })
+
+        data['visible_roles'] = visible
     return jsonify(data)
 
 @app.route('/api/rooms/<room_name>/roles', methods=['POST'])

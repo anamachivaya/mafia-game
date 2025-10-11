@@ -216,6 +216,12 @@
     <div class="description" id="roleDescription">
       {{ description | e }}
     </div>
+
+    <!-- Visible teammates (e.g., mafias see other mafias) -->
+    <div id="visibleTeammatesSection" style="display:none; margin-top:1rem;">
+      <div class="roles-header">🕵️‍♂️ Teammates you can see</div>
+      <div id="visibleTeammatesList" style="display:flex; flex-direction:column; gap:0.5rem;"></div>
+    </div>
     
     <div class="button-group">
   <!-- Removed manual refresh: players view role automatically via the main page -->
@@ -357,7 +363,7 @@
         }
         
         const data = await response.json();
-        const eliminatedPlayers = data.eliminated_players || [];
+  const eliminatedPlayers = data.eliminated_players || [];
         const isPlayerEliminated = eliminatedPlayers.includes(PLAYER_NAME);
         
         updateEliminationStatus(isPlayerEliminated);
@@ -380,6 +386,31 @@
         const now = new Date();
         document.getElementById('lastUpdated').textContent = 
           'Last checked: ' + now.toLocaleTimeString();
+
+        // Render visible teammates if provided (e.g., mafia members)
+        try {
+          const visible = data.visible_roles || [];
+          const section = document.getElementById('visibleTeammatesSection');
+          const list = document.getElementById('visibleTeammatesList');
+          if (visible && visible.length) {
+            section.style.display = 'block';
+            list.innerHTML = '';
+            visible.forEach(v => {
+              const el = document.createElement('div');
+              el.style.display = 'flex';
+              el.style.justifyContent = 'space-between';
+              el.style.alignItems = 'center';
+              el.style.padding = '0.5rem';
+              el.style.background = '#111827';
+              el.style.borderRadius = '8px';
+              el.innerHTML = `<strong>${escapeHtml(v.name)}</strong><span class="faction-badge faction-unified">${escapeHtml(v.role)}</span>`;
+              list.appendChild(el);
+            });
+          } else {
+            section.style.display = 'none';
+            list.innerHTML = '';
+          }
+        } catch (e) { console.warn('Could not render visible teammates', e); }
         
       } catch (error) {
         console.error('Error checking elimination status:', error);
