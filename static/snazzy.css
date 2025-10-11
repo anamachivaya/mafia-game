@@ -8,8 +8,9 @@ body{font-family:Inter,ui-sans-serif,system-ui, -apple-system,Segoe UI, Roboto, 
 h1{font-size:2rem;margin:0 0 .5rem;color:#f7fbff}
 .sub{color:var(--muted);margin-bottom:1rem}
 .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.6rem .9rem;border-radius:8px;border:none;cursor:pointer;font-weight:700}
-.btn-primary{background:linear-gradient(180deg,var(--accent-2),#1846a9);color:white}
+.btn-primary{background:linear-gradient(180deg,var(--accent-2),#1846a9);color:white;padding:.6rem .9rem;border-radius:8px}
 .btn-ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+.btn-ghost{padding:.5rem .75rem}
 .count{background:rgba(255,255,255,0.03);padding:.25rem .5rem;border-radius:6px;font-weight:700}
 .role-pool-sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:.75rem}
 .role-pool-section{padding:.75rem;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(0,0,0,0.02));border:1px solid rgba(255,255,255,0.02)}
@@ -43,6 +44,14 @@ h1{font-size:2rem;margin:0 0 .5rem;color:#f7fbff}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 
+/* Action panel and selection */
+.action-panel{padding:.75rem;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(0,0,0,0.02));border:1px solid rgba(255,255,255,0.02)}
+.player-pill{cursor:pointer}
+.player-pill.selected{outline:2px solid rgba(37,99,235,0.9);box-shadow:0 8px 24px rgba(2,6,23,0.6);transform:translateY(-3px)}
+.results-panel{padding:.75rem;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));border:1px solid rgba(255,255,255,0.03);margin-top:.75rem}
+.results-panel .killed{color:#ffb4b4;font-weight:800}
+.results-panel .muted{color:#fbbf24}
+
 /* Status indicator (used on thanks/lobby screens) */
 .status-indicator{background:rgba(255,255,255,0.02);padding:1rem;border-radius:8px;margin:1rem 0;border-left:4px solid var(--accent);transition:all .3s ease}
 .status-indicator.waiting{border-left-color:var(--accent);background:#451a03;color:var(--accent)}
@@ -55,3 +64,17 @@ input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-
 .list-inline{list-style:none;padding:0;margin:0;display:flex;gap:.5rem;flex-wrap:wrap}
 .muted-small{margin-top:.5rem;font-size:.8rem;color:#64748b}
 .footer{ text-align:center;margin-top:2rem;color:var(--muted);font-size:0.9rem}
+
+/* Paused overlay shown to players who are waiting for others to act */
+.paused-overlay{position:fixed;inset:0;background:rgba(2,6,23,0.85);display:none;align-items:center;justify-content:center;z-index:1200}
+.paused-overlay .paused-message{background:linear-gradient(180deg,#0f172a,#081028);padding:2rem;border-radius:12px;text-align:center;border:1px solid rgba(255,255,255,0.04)}
+.paused-overlay .paused-message h2{margin:0 0 .5rem;font-size:1.6rem}
+.paused-overlay .paused-message p{color:var(--muted)}
+
+/* Host header helpers to avoid inline styles */
+.header-panel{display:flex;align-items:center;gap:1rem;justify-content:space-between;padding:1rem 1.25rem}
+.logo-box{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#7f1d1d,#3a0710);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:1.1rem}
+.host-chat-messages{height:260px;overflow:auto;background:#0b1220;padding:0.75rem;border-radius:8px;border:1px solid rgba(255,255,255,0.03)}
+.input-field{flex:1;padding:0.6rem;border-radius:8px;border:1px solid #334155;background:#041027;color:#e2e8f0}
+.inline-stats{display:flex;align-items:center;gap:.5rem}
+

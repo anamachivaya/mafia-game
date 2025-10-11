@@ -489,6 +489,23 @@
       <button class="btn" id="toggleChatBtn" onclick="toggleHostChat()">Lobby Chat</button>
     </div>
 
+    <div class="panel">
+      <h3>Host Controls</h3>
+      <p class="small">Use these to orchestrate night and day phases.</p>
+      <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.5rem;">
+        <button class="btn btn-primary" id="startNightBtn">Start Night</button>
+        <button class="btn btn-primary" id="advanceStepBtn">Advance Step</button>
+        <button class="btn btn-success" id="startDayBtn">Start Day (Resolve Night)</button>
+        <div class="copy-status" id="phaseStatus">Phase: —</div>
+      </div>
+      <div class="small mt-1" id="pendingCounts">Pending actions: —</div>
+    </div>
+
+    <div class="panel" id="nightResultsPanel">
+      <h3>Last Night Results</h3>
+      <div id="lastNightResults" class="results-panel">No night played yet.</div>
+    </div>
+
     <p class="small">Share the join link: <code id="joinLink"></code>
       <button id="copyJoinBtn" class="btn btn-secondary btn-copy" onclick="copyJoinLink()">Copy</button>
       <span id="copyStatus" class="copy-status" aria-live="polite"></span>
@@ -1201,6 +1218,99 @@
           return;
         }
       }
+
+    // Host phase control handlers
+    const NIGHT_STEPS = ['mafia_proposal', 'framer_frame', 'doctor_save', 'cop_check', 'vigilante_kill', 'bodyguard_save', 'mute'];
+    document.getElementById('startNightBtn').addEventListener('click', async () => {
+      const r = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-night`, { method: 'POST' });
+      const d = await r.json();
+      if (d.success) {
+        showToast('Night started');
+        pollPhase();
+      } else {
+        alert('Failed to start night: ' + (d.error || 'unknown'));
+      }
+    });
+
+    document.getElementById('advanceStepBtn').addEventListener('click', async () => {
+      // query current step and advance to next only if step is complete (or host forces it)
+      const p = await (await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/phase`, { cache: 'no-store' })).json();
+      const cur = p.phase_step || '';
+      if (!p.step_complete) {
+        if (!confirm('Not all expected players have acted for this step. Force advance anyway?')) return;
+      }
+      let nextIdx = 0;
+      if (cur) {
+        const idx = NIGHT_STEPS.indexOf(cur);
+        nextIdx = (idx >= 0 && idx < NIGHT_STEPS.length - 1) ? idx + 1 : 0;
+      }
+      const nextStep = NIGHT_STEPS[nextIdx];
+      const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/set-step`, { method: 'POST', body: `step=${encodeURIComponent(nextStep)}` });
+      const dd = await resp.json();
+      if (dd.success) showToast('Advanced to ' + dd.phase_step);
+      pollPhase();
+    });
+
+    document.getElementById('startDayBtn').addEventListener('click', async () => {
+      const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-day`, { method: 'POST' });
+      const dd = await resp.json();
+      if (dd.success) {
+        showToast('Day started — night actions resolved', 1800);
+        // refresh UI so eliminated players show as dead
+        setTimeout(refresh, 600);
+      } else {
+        alert('Failed to start day: ' + (dd.error || 'unknown'));
+      }
+    });
+
+    async function pollPhase() {
+      try {
+        const p = await (await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/phase`, { cache: 'no-store' })).json();
+        document.getElementById('phaseStatus').textContent = `Phase: ${p.phase || '—'} ${p.phase_step ? '— ' + p.phase_step : ''}`;
+        const pending = p.pending_counts || {};
+        const keys = Object.keys(pending).map(k => `${k}: ${pending[k]}`).join(', ');
+        document.getElementById('pendingCounts').textContent = keys || 'Pending actions: none';
+        // update Advance button state
+        const advBtn = document.getElementById('advanceStepBtn');
+        if (p.phase === 'night') {
+          if (p.step_complete) {
+            advBtn.textContent = 'Advance Step (complete)';
+            advBtn.classList.remove('btn-ghost');
+            advBtn.disabled = false;
+          } else {
+            advBtn.textContent = `Advance Step (waiting ${p.expected_actors ? p.expected_actors.length : 0})`;
+            advBtn.classList.add('btn-ghost');
+            advBtn.disabled = false; // allow force-advance via confirmation
+          }
+          // Only allow starting day when night phase exists (host may still force)
+          document.getElementById('startDayBtn').disabled = false;
+        } else {
+          advBtn.textContent = 'Advance Step';
+          advBtn.disabled = true;
+          document.getElementById('startDayBtn').disabled = true;
+        }
+        // render last night results for host
+        try {
+          const lr = p.last_night_results || {};
+          const panel = document.getElementById('lastNightResults');
+          if (lr && (lr.killed && lr.killed.length || lr.notes && lr.notes.length || lr.muted)) {
+            let html = '';
+            if (lr.killed && lr.killed.length) html += `<div class="killed">Killed: ${lr.killed.map(x => `<strong>${x}</strong>`).join(', ')}</div>`;
+            if (lr.saved && lr.saved.length) html += `<div class="saved">Saved: ${lr.saved.join(', ')}</div>`;
+            if (lr.muted) html += `<div class="muted">Muted: ${lr.muted}</div>`;
+            if (lr.notes && lr.notes.length) html += `<div class="notes">${lr.notes.map(n => `<div>${n}</div>`).join('')}</div>`;
+            panel.innerHTML = html;
+          } else {
+            document.getElementById('lastNightResults').innerHTML = 'No night played yet.';
+          }
+        } catch (e) { console.warn('Could not render last night results', e); }
+      } catch (e) {
+        console.warn('phase poll failed', e);
+      }
+    }
+
+    // start periodic phase poll
+    setInterval(pollPhase, 1800);
 
       // otherwise add new role input prefilled
       const roleDiv = document.createElement('div');

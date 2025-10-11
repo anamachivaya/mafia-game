@@ -218,6 +218,15 @@
       {{ description | e }}
     </div>
 
+    <!-- Night action UI -->
+    <div id="actionSection" class="mt-1" style="display:none;">
+      <div class="roles-header">Current Phase: <span id="currentPhase">—</span> <small id="currentStep" class="small muted-small"></small></div>
+      <div id="actionControls" class="panel role-card" style="padding:.75rem;">
+        <div id="actionMessage" class="small">No actions available right now.</div>
+        <div id="actionTargets" style="margin-top:.75rem; display:flex; flex-direction:column; gap:0.4rem;"></div>
+      </div>
+    </div>
+
     <!-- Visible teammates (e.g., mafias see other mafias) -->
     <div id="visibleTeammatesSection" style="display:none; margin-top:1rem;">
       <div class="roles-header">🕵️‍♂️ Teammates you can see</div>
@@ -234,6 +243,18 @@
     </div>
     
     <div class="last-updated" id="lastUpdated">Last checked: —</div>
+  </div>
+
+  <div id="playerNightResults" class="wrap" style="max-width:520px; margin-top:1rem; display:none;">
+    <div class="results-panel" id="playerLastNightResults">No results yet.</div>
+  </div>
+
+  <!-- Paused overlay for non-actors -->
+  <div class="paused-overlay" id="pausedOverlay">
+    <div class="paused-message">
+      <h2 id="pausedTitle">Waiting...</h2>
+      <p id="pausedText">Waiting for other players to act. This screen will become active when it's your turn.</p>
+    </div>
   </div>
 
   <!-- Elimination overlay -->
@@ -388,6 +409,26 @@
         document.getElementById('lastUpdated').textContent = 
           'Last checked: ' + now.toLocaleTimeString();
 
+        // Show limited last night results to players (names only)
+        try {
+          const results = data.last_night_results || {};
+          const pPanel = document.getElementById('playerNightResults');
+          const pContainer = document.getElementById('playerLastNightResults');
+          if (results && (results.killed && results.killed.length || results.muted)) {
+            let html = '';
+            if (results.killed && results.killed.length) {
+              html += `<div class="killed">Killed: ${results.killed.map(x => escapeHtml(x)).join(', ')}</div>`;
+            }
+            if (results.muted) {
+              html += `<div class="muted">Muted: ${escapeHtml(results.muted)}</div>`;
+            }
+            pContainer.innerHTML = html;
+            pPanel.style.display = 'block';
+          } else {
+            pPanel.style.display = 'none';
+          }
+        } catch (e) { console.warn('Could not render player night results', e); }
+
         // Render visible teammates if provided (e.g., mafia members)
         try {
           const visible = data.visible_roles || [];
@@ -398,12 +439,7 @@
             list.innerHTML = '';
             visible.forEach(v => {
               const el = document.createElement('div');
-              el.style.display = 'flex';
-              el.style.justifyContent = 'space-between';
-              el.style.alignItems = 'center';
-              el.style.padding = '0.5rem';
-              el.style.background = '#111827';
-              el.style.borderRadius = '8px';
+              el.className = 'visible-teammate';
               el.innerHTML = `<strong>${escapeHtml(v.name)}</strong><span class="faction-badge faction-unified">${escapeHtml(v.role)}</span>`;
               list.appendChild(el);
             });
@@ -423,6 +459,149 @@
     // Check elimination status immediately and then every 3 seconds
     checkEliminationStatus();
     setInterval(checkEliminationStatus, 3000);
+    
+    // Phase polling and action handling (with caching and step-change rendering)
+    let _lastStep = null;
+    let _cachedPlayers = null;
+    const _mySelections = {}; // action -> target
+
+    async function fetchPhase() {
+      try {
+        const res = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/phase`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        const phase = data.phase || 'lobby';
+        const step = data.phase_step || '';
+        document.getElementById('currentPhase').textContent = phase.toUpperCase();
+        document.getElementById('currentStep').textContent = step ? `— ${step}` : '';
+
+        const actionSection = document.getElementById('actionSection');
+        const actionControls = document.getElementById('actionControls');
+        const actionMessage = document.getElementById('actionMessage');
+        const actionTargets = document.getElementById('actionTargets');
+
+        if (phase === 'night') {
+          actionSection.style.display = 'block';
+          const role = document.getElementById('roleBadge').textContent.trim().toLowerCase();
+          const expected = data.expected_actors || [];
+          const amExpected = expected.includes(PLAYER_NAME);
+          const pausedOverlay = document.getElementById('pausedOverlay');
+          const pausedTitle = document.getElementById('pausedTitle');
+          const pausedText = document.getElementById('pausedText');
+          if (!amExpected) {
+            // show a full-screen paused overlay so players know they cannot act
+            pausedOverlay.style.display = 'flex';
+            pausedTitle.textContent = `Waiting for ${expected.length ? expected.join(', ') : 'others'}`;
+            pausedText.textContent = 'This screen will be active when it is your role\'s turn to perform an action.';
+            actionTargets.innerHTML = '';
+            actionMessage.textContent = `Waiting for ${expected.length ? expected.join(', ') : 'others'} to act...`;
+            return;
+          } else {
+            // hide overlay and allow interaction
+            pausedOverlay.style.display = 'none';
+          }
+
+          // fetch players once per night (cache until phase changes)
+          if (!_cachedPlayers) {
+            const pResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+            const pData = await pResp.json();
+            _cachedPlayers = pData.players || [];
+          }
+          const playerOptions = _cachedPlayers.filter(p => p !== PLAYER_NAME);
+
+          // Only re-render controls when step changes to avoid flicker
+          if (_lastStep !== step) {
+            _lastStep = step;
+            actionTargets.innerHTML = '';
+            actionMessage.textContent = 'Select a target below and submit your action.';
+
+            function makeTargetButton(target, actionName) {
+              const btn = document.createElement('button');
+              btn.className = 'player-pill';
+              btn.textContent = target;
+              btn.dataset.target = target;
+              // restore selection if any
+              if (_mySelections[actionName] && _mySelections[actionName] === target) btn.classList.add('selected');
+              btn.onclick = () => {
+                // mark selected only within this action group
+                const siblings = actionTargets.querySelectorAll(`.player-pill[data-action='${actionName}']`);
+                siblings.forEach(s => s.classList.remove('selected'));
+                btn.classList.add('selected');
+                _mySelections[actionName] = target;
+              };
+              // tag which action group this button belongs to (host will create separate groups)
+              btn.setAttribute('data-action', actionName);
+              return btn;
+            }
+
+            // helper to append action UI
+            function appendActionUI(labelText, actionName, options, submitLabel, submitAction, primary=false) {
+              const label = document.createElement('div'); label.textContent = labelText;
+              actionTargets.appendChild(label);
+              options.forEach(p => actionTargets.appendChild(makeTargetButton(p, actionName)));
+              const submit = document.createElement('button');
+              submit.className = primary ? 'btn btn-danger mt-1' : 'btn btn-primary mt-1';
+              submit.textContent = submitLabel;
+              submit.onclick = async () => {
+                const sel = actionTargets.querySelector(`.player-pill[data-action='${actionName}'].selected`);
+                const target = sel ? sel.dataset.target : '';
+                if (!target && submitAction !== 'bodyguard_save') { showToast('Choose a player first'); return; }
+                await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/submit-action`, { method: 'POST', body: new URLSearchParams({ action: submitAction, target }) });
+                _mySelections[actionName] = target;
+                showToast(submitLabel + ' recorded');
+              };
+              actionTargets.appendChild(submit);
+            }
+
+            // Which actions to show (role substring based)
+            if (role.includes('mafia')) {
+              appendActionUI('Mafia: propose a kill (consensus)', 'mafia_proposal', playerOptions, 'Propose Kill', 'mafia_proposal');
+            }
+            if (role.includes('godfather')) {
+              appendActionUI('Godfather: finalize mafia kill', 'mafia_kill', playerOptions, 'Finalize Kill (Godfather)', 'mafia_kill', true);
+            }
+            if (role.includes('framer')) {
+              appendActionUI('Framer: choose a player to frame', 'frame', playerOptions, 'Frame Player', 'frame');
+            }
+            if (role.includes('doctor') || role.includes('medic')) {
+              appendActionUI('Doctor: choose a player to save', 'save', [PLAYER_NAME].concat(playerOptions), 'Save Player', 'save');
+            }
+            if (role.includes('cop') || role.includes('sheriff') || role.includes('detective')) {
+              appendActionUI('Cop: choose a player to check', 'check', playerOptions, 'Check Player', 'check');
+            }
+            if (role.includes('vigilante')) {
+              appendActionUI('Vigilante: choose a player to kill', 'vigilante_kill', [PLAYER_NAME].concat(playerOptions), 'Kill Player', 'vigilante_kill', true);
+            }
+            if (role.includes('bodyguard')) {
+              appendActionUI('Bodyguard: choose a player to protect (or pick none)', 'bodyguard_save', [PLAYER_NAME].concat(playerOptions), 'Protect Player', 'bodyguard_save');
+            }
+            if (role.includes('sheriff') || role.includes('muter')) {
+              appendActionUI('Sheriff: choose a player to mute this round', 'mute', playerOptions, 'Mute Player', 'mute');
+            }
+          } else {
+            // step didn't change: keep cached players and selections; ensure action section visible
+            actionSection.style.display = 'block';
+            // re-highlight any selections preserved in _mySelections
+            for (const [actionName, tgt] of Object.entries(_mySelections)) {
+              const btn = actionTargets.querySelector(`.player-pill[data-action='${actionName}'][data-target='${tgt}']`);
+              if (btn) btn.classList.add('selected');
+            }
+          }
+
+        } else {
+          // not night
+          document.getElementById('actionSection').style.display = 'none';
+          _lastStep = null;
+          _cachedPlayers = null;
+          // clear selections when day starts
+          // (keep history in UI via last_night_results)
+        }
+      } catch (e) { console.warn('phase poll failed', e); }
+    }
+
+  // Start polling phase every 1.5 seconds (render only on step changes)
+    fetchPhase();
+    setInterval(fetchPhase, 1500);
   </script>
 </body>
 <script>
