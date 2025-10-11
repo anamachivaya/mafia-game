@@ -18,11 +18,11 @@ roles_data = {}
 factions_map = {}
 lock = Lock()
 
-# Room lifetime (seconds) - Extended to 1 hour
-ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 60 * 60))  # default 1 hour (3600 seconds)
+# Room lifetime (seconds) - Extended to 4 hours
+ROOM_TTL = int(os.environ.get('ROOM_TTL_SECONDS', 4 * 60 * 60))  # default 4 hours (14400 seconds)
 
 # Cookie lifetime - Set to match room lifetime for consistency
-COOKIE_TTL = ROOM_TTL  # 1 hour
+COOKIE_TTL = ROOM_TTL  # 4 hours
 
 def load_roles_data():
     """Load a merged roles.json file containing description and faction for each role.
@@ -244,7 +244,7 @@ def create_room():
             'chat_palette_orig': base_hues[:]
         }
 
-    # Set host cookie to allow host access (1 hour)
+    # Set host cookie to allow host access (4 hours)
     resp = make_response(redirect(url_for('host_dashboard', room_name=room_name)))
     resp.set_cookie('host_token', host_token, max_age=COOKIE_TTL)  # Changed from ROOM_TTL
     resp.set_cookie('host_room', room_name, max_age=COOKIE_TTL)    # Changed from ROOM_TTL
