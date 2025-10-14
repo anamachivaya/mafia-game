@@ -273,6 +273,29 @@
     <div class="last-updated" id="lastUpdated">Last checked: —</div>
   </div>
 
+  <!-- Read-only Moderator Dashboard for players (no action buttons) -->
+  <div class="card" style="max-width:900px; margin: 1.25rem auto;" id="playerModeratorDashboard">
+    <h3 style="margin-top:0;">Game Status</h3>
+    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+      <div style="flex:1; min-width:160px;">
+        <div class="small">Phase</div>
+        <div style="font-weight:800; font-size:1.05rem;" id="pdPhase">—</div>
+        <div class="small" style="margin-top:0.5rem;">Night step</div>
+        <div style="font-weight:700;" id="pdNightStep">—</div>
+      </div>
+      <div style="flex:1; min-width:160px;">
+        <div class="small">Last night killed</div>
+        <div style="font-weight:700;" id="pdLastKilled">—</div>
+        <div class="small" style="margin-top:0.5rem;">Last night muted</div>
+        <div style="font-weight:700;" id="pdLastMuted">—</div>
+      </div>
+      <div style="flex:1; min-width:220px;">
+        <div class="small">Last night events</div>
+        <div id="pdLastEvents" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:130px; overflow:auto;">—</div>
+      </div>
+    </div>
+  </div>
+
   <div style="position:fixed; left:1rem; bottom:1rem; color:#94a3b8; font-size:0.9rem;" id="nightStepIndicator"> </div>
 
   <!-- Night action modal: replaced select with clickable player tiles -->
@@ -455,6 +478,26 @@
         document.getElementById('lastUpdated').textContent = 
           'Last checked: ' + now.toLocaleTimeString();
 
+        // Populate read-only moderator dashboard from players response if available
+        try {
+          const pdPhase = document.getElementById('pdPhase');
+          const pdNightStep = document.getElementById('pdNightStep');
+          const pdLastKilled = document.getElementById('pdLastKilled');
+          const pdLastMuted = document.getElementById('pdLastMuted');
+          const pdLastEvents = document.getElementById('pdLastEvents');
+          if (pdPhase) pdPhase.textContent = data.phase || '—';
+          if (pdNightStep) pdNightStep.textContent = data.current_night_step ? (data.current_night_step.name || '') + (data.current_night_step.index != null ? ` (step ${data.current_night_step.index})` : '') : '—';
+          const killedList = (data.last_night_killed && data.last_night_killed.length) ? data.last_night_killed : (data.last_night_events && data.last_night_events.killed ? data.last_night_events.killed : []);
+          const mutedVal = (data.last_night_muted !== undefined && data.last_night_muted !== null) ? data.last_night_muted : (data.last_night_events ? data.last_night_events.muted : null);
+          if (pdLastKilled) pdLastKilled.textContent = (killedList && killedList.length) ? killedList.join(', ') : '—';
+          if (pdLastMuted) pdLastMuted.textContent = (mutedVal) ? mutedVal : '—';
+          if (pdLastEvents) {
+            const parts = [];
+            if (killedList && killedList.length) parts.push('<b>Killed:</b> ' + killedList.join(', '));
+            if (mutedVal) parts.push('<b>Muted:</b> ' + mutedVal);
+            pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+          }
+        } catch (e) { /* ignore dashboard binding errors */ }
         // Render visible teammates if provided (e.g., mafia members)
         try {
           const visible = data.visible_roles || [];
@@ -495,9 +538,18 @@
   let lastKnownPhase = null;
   let lastKnownNightIndex = null;
   let pendingActionType = null;
+  // Remember the last action the client submitted (to avoid re-prompting for same step)
+  let lastActionSubmitted = null; // { step: index, action: 'sheriff_mute' }
+  // Step index that was shown when the modal was opened
+  let lastShownStepIndex = null;
+  // Prevent overlapping prompt renders
+  let promptInProgress = false;
 
     function closeNightModal() {
-      document.getElementById('nightModal').style.display = 'none';
+      const modal = document.getElementById('nightModal');
+      try { if (modal && modal.dataset) modal.dataset.opened = '0'; } catch(e) {}
+      try { modal.style.display = 'none'; } catch(e) {}
+      promptInProgress = false;
     }
 
     async function submitNightAction() {
@@ -514,6 +566,34 @@
         const body = `action_type=${encodeURIComponent(actionType)}&target=${encodeURIComponent(target || '')}`;
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/action`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
         const d = await resp.json();
+          // fetch game-state and update read-only dashboard
+          try {
+            const gsResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/game-state`, { cache: 'no-store' });
+            if (gsResp && gsResp.ok) {
+              const gs = await gsResp.json();
+              const pdPhase = document.getElementById('pdPhase');
+              const pdNightStep = document.getElementById('pdNightStep');
+              const pdLastKilled = document.getElementById('pdLastKilled');
+              const pdLastMuted = document.getElementById('pdLastMuted');
+              const pdLastEvents = document.getElementById('pdLastEvents');
+              if (pdPhase) pdPhase.textContent = gs.phase || '—';
+              if (pdNightStep) pdNightStep.textContent = gs.current_night_step ? (gs.current_night_step.name || '') + (gs.current_night_step.index != null ? ` (step ${gs.current_night_step.index})` : '') : '—';
+              const killedList = (gs.last_night_killed && gs.last_night_killed.length) ? gs.last_night_killed : (gs.last_night_events && gs.last_night_events.killed ? gs.last_night_events.killed : []);
+              const mutedVal = (gs.last_night_muted !== undefined && gs.last_night_muted !== null) ? gs.last_night_muted : (gs.last_night_events ? gs.last_night_events.muted : null);
+              if (pdLastKilled) pdLastKilled.textContent = (killedList && killedList.length) ? killedList.join(', ') : '—';
+              if (pdLastMuted) pdLastMuted.textContent = (mutedVal) ? mutedVal : '—';
+              if (pdLastEvents) {
+                const parts = [];
+                const killedParts = (gs.last_night_killed && gs.last_night_killed.length) ? gs.last_night_killed : (gs.last_night_events && gs.last_night_events.killed ? gs.last_night_events.killed : []);
+                const mutedPart = (gs.last_night_muted !== undefined && gs.last_night_muted !== null) ? gs.last_night_muted : (gs.last_night_events ? gs.last_night_events.muted : null);
+                if (killedParts && killedParts.length) parts.push('<b>Killed:</b> ' + killedParts.join(', '));
+                if (mutedPart) parts.push('<b>Muted:</b> ' + mutedPart);
+                pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+              }
+            }
+          } catch (e) {
+            // ignore game-state fetch errors for player dashboard
+          }
         if (d.success) {
           showToast('Action submitted', 1000);
           if (d.cop_result) {
@@ -522,6 +602,9 @@
           }
           // close modal and clear pending action
           closeNightModal();
+          try { const modalEl = document.getElementById('nightModal'); if (modalEl && modalEl.dataset) modalEl.dataset.opened = '0'; } catch(e) {}
+          // record submitted action so we don't re-prompt for the same step/action
+          try { lastActionSubmitted = { step: (lastShownStepIndex != null ? lastShownStepIndex : null), action: actionType }; } catch(e) { lastActionSubmitted = { step: null, action: actionType }; }
           pendingActionType = null;
           // mark target tile acted and disable its buttons
           try {
@@ -596,7 +679,6 @@
           // update mafia panel visibility and contents for mafia players
           // mafia coordination UI removed; however mafias still see visible teammates via visible_roles
 
-          if (stepChanged) {
           // determine player's role from DOM
           const role = document.getElementById('roleBadge').textContent || '';
           const low = role.toLowerCase();
@@ -611,7 +693,8 @@
             // map role keywords to action types and only allow if included in acts
             const roleActionMap = [
               {check: ['doctor','medic'], action: 'doctor_save'},
-              {check: ['cop','sheriff','detective'], action: 'cop_check'},
+              {check: ['sheriff'], action: 'sheriff_mute'},
+              {check: ['cop','detective'], action: 'cop_check'},
               {check: ['vigilante'], action: 'vigilante_kill'},
               {check: ['bodyguard','guard'], action: 'bodyguard_save'},
               {check: ['framer'], action: 'framer_pick'},
@@ -644,73 +727,104 @@
             }
           }
 
-          if (pendingActionType) {
-            // populate clickable target tiles (sorted)
-            const targetsEl = document.getElementById('nightTargets');
-            targetsEl.innerHTML = '';
-            const sorted = alive.slice().sort((a,b)=> a.localeCompare(b));
-            for (const p of sorted) {
-              const tile = document.createElement('div');
-              tile.className = 'target-tile';
-              // mark eliminated players as disabled
-              const isElim = (pdata.eliminated_players||[]).includes(p);
-              if (!isElim) tile.classList.add('clickable'); else tile.classList.add('disabled');
-
-              const nameEl = document.createElement('div');
-              nameEl.className = 'player-name';
-              nameEl.textContent = p;
-              tile.appendChild(nameEl);
-
-              const actionsRow = document.createElement('div');
-              actionsRow.className = 'tile-actions';
-
-              // create action buttons depending on pendingActionType
-              function makeBtn(text, cls, onClick) {
-                const b = document.createElement('button');
-                b.className = 'btn';
-                b.style.padding = '0.45rem 0.6rem';
-                b.style.fontSize = '0.9rem';
-                b.style.borderRadius = '8px';
-                b.style.cursor = 'pointer';
-                b.textContent = text;
-                if (cls === 'kill') { b.style.background = '#dc2626'; b.style.color = 'white'; }
-                else if (cls === 'save') { b.style.background = '#059669'; b.style.color = 'white'; }
-                else if (cls === 'check') { b.style.background = '#2563eb'; b.style.color = 'white'; }
-                b.onclick = onClick;
-                return b;
-              }
-
-              const destructive = (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill' || pendingActionType === 'framer_pick');
-              if (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill') {
-                // destructive: confirm first
-                actionsRow.appendChild(makeBtn('Kill', 'kill', () => {
-                  if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType));
-                }));
-              } else if (pendingActionType === 'doctor_save' || pendingActionType === 'bodyguard_save') {
-                actionsRow.appendChild(makeBtn('Save', 'save', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
-              } else if (pendingActionType === 'cop_check' || pendingActionType === 'sheriff_mute') {
-                actionsRow.appendChild(makeBtn('Check', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
-              } else if (pendingActionType === 'framer_pick') {
-                actionsRow.appendChild(makeBtn('Frame', 'kill', () => { if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType)); }));
+          // show modal when the step has changed OR modal is currently hidden (in case client missed change)
+          // but do not re-show if we already submitted the same action for this step
+          const alreadySubmittedHere = lastActionSubmitted && lastActionSubmitted.step != null && lastActionSubmitted.step === (step ? step.index : null) && lastActionSubmitted.action === pendingActionType;
+          // If server reports this step already completed, don't prompt (helps avoid re-prompt when server moved on)
+          const serverStepCompleted = (pdata && pdata.current_night_step_completed) || (gs && gs.current_night_step_completed);
+          if (pendingActionType && !alreadySubmittedHere && !serverStepCompleted && (stepChanged || document.getElementById('nightModal').style.display === 'none')) {
+            // Acquire modal reference early and atomically mark it opened to avoid races
+            const modal = document.getElementById('nightModal');
+            try {
+              if (modal && modal.dataset && modal.dataset.opened === '1') {
+                // already opened by a concurrent callback; mark prompt in progress and skip
+                promptInProgress = true;
               } else {
-                // generic action button
-                actionsRow.appendChild(makeBtn('Select', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+                // mark opened immediately (atomic with respect to this JS execution block)
+                if (modal && modal.dataset) modal.dataset.opened = '1';
+                promptInProgress = true;
+                try { lastShownStepIndex = step ? step.index : null; } catch(e) { lastShownStepIndex = null; }
+
+                // populate clickable target tiles (sorted)
+                const targetsEl = document.getElementById('nightTargets');
+                targetsEl.innerHTML = '';
+                const sorted = alive.slice().sort((a,b)=> a.localeCompare(b));
+                for (const p of sorted) {
+                  const tile = document.createElement('div');
+                  tile.className = 'target-tile';
+                  // mark eliminated players as disabled
+                  const isElim = (pdata.eliminated_players||[]).includes(p);
+                  if (!isElim) tile.classList.add('clickable'); else tile.classList.add('disabled');
+
+                  const nameEl = document.createElement('div');
+                  nameEl.className = 'player-name';
+                  nameEl.textContent = p;
+                  tile.appendChild(nameEl);
+
+                  const actionsRow = document.createElement('div');
+                  actionsRow.className = 'tile-actions';
+
+                  // create action buttons depending on pendingActionType
+                  function makeBtn(text, cls, onClick) {
+                    const b = document.createElement('button');
+                    b.className = 'btn';
+                    b.style.padding = '0.45rem 0.6rem';
+                    b.style.fontSize = '0.9rem';
+                    b.style.borderRadius = '8px';
+                    b.style.cursor = 'pointer';
+                    b.textContent = text;
+                    if (cls === 'kill') { b.style.background = '#dc2626'; b.style.color = 'white'; }
+                    else if (cls === 'save') { b.style.background = '#059669'; b.style.color = 'white'; }
+                    else if (cls === 'check') { b.style.background = '#2563eb'; b.style.color = 'white'; }
+                    b.onclick = onClick;
+                    return b;
+                  }
+
+                  const destructive = (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill' || pendingActionType === 'framer_pick');
+                  if (pendingActionType === 'mafia_final' || pendingActionType === 'vigilante_kill') {
+                    // destructive: confirm first
+                    actionsRow.appendChild(makeBtn('Kill', 'kill', () => {
+                      if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType));
+                    }));
+                  } else if (pendingActionType === 'doctor_save' || pendingActionType === 'bodyguard_save') {
+                    actionsRow.appendChild(makeBtn('Save', 'save', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+                  } else if (pendingActionType === 'cop_check') {
+                    actionsRow.appendChild(makeBtn('Check', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+                  } else if (pendingActionType === 'sheriff_mute') {
+                    actionsRow.appendChild(makeBtn('Mute', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+                  } else if (pendingActionType === 'framer_pick') {
+                    actionsRow.appendChild(makeBtn('Frame', 'kill', () => { if (isElim) return; openActionConfirm(p, pendingActionType, () => submitNightActionTo(p, pendingActionType)); }));
+                  } else {
+                    // generic action button
+                    actionsRow.appendChild(makeBtn('Select', 'check', () => { if (isElim) return; submitNightActionTo(p, pendingActionType); }));
+                  }
+
+                  tile.appendChild(actionsRow);
+                  targetsEl.appendChild(tile);
+                }
+
+                // show appropriate title
+                const title = document.getElementById('nightModalTitle');
+                title.textContent = pendingActionType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                try { modal.style.display = 'flex'; } catch(e) {}
               }
-
-              tile.appendChild(actionsRow);
-              targetsEl.appendChild(tile);
+            } catch (e) {
+              // fallback to simple display if dataset unsupported
+              try { document.getElementById('nightModal').style.display = 'flex'; } catch(e2) {}
+              try { lastShownStepIndex = step ? step.index : null; } catch(e3) { lastShownStepIndex = null; }
+              promptInProgress = true;
             }
-
-            // show appropriate title
-            const title = document.getElementById('nightModalTitle');
-            title.textContent = pendingActionType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-            document.getElementById('nightModal').style.display = 'flex';
-          }
           }
         }
   // track last seen night phase and night_step index to detect changes and avoid duplicate prompts
+  // If the night step advanced since we last saw it, clear the lastActionSubmitted so roles can act again
+  const prevNightIndex = lastKnownNightIndex;
   lastKnownPhase = gs.phase;
   lastKnownNightIndex = gs.current_night_step ? gs.current_night_step.index : null;
+  if (prevNightIndex != null && lastKnownNightIndex != null && prevNightIndex !== lastKnownNightIndex) {
+    lastActionSubmitted = null;
+    lastShownStepIndex = null;
+  }
       } catch (e) {
         // ignore
       }

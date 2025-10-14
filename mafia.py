@@ -167,7 +167,9 @@ def home():
 
 def _room_expired(room):
     import time
-    return (time.time() - room.get('created_at', 0)) > ROOM_TTL
+    # Prefer last_host_activity (activity-based TTL). Fall back to created_at for older rooms.
+    last = room.get('last_host_activity') or room.get('created_at', 0)
+    return (time.time() - last) > ROOM_TTL
 
 
 def get_room_or_404(room_name):
@@ -230,7 +232,9 @@ def create_room():
             'host_password': host_password,
             'player_password': None,
             'host_token': host_token,
-            'created_at': time.time(),
+        'created_at': time.time(),
+        # track last activity by the host to implement activity-based TTL
+        'last_host_activity': time.time(),
             'players': [],
             'roles': [],
             'assignments': {},
@@ -324,6 +328,30 @@ def join_page(room_name):
                                           password_required=password_required)  # Add this line
 
 
+@app.after_request
+def refresh_host_activity(response):
+    """If a request includes valid host cookies for an existing room, refresh the
+    room's last_host_activity timestamp and extend host cookies so that the room
+    TTL is activity-based (ROOM_TTL since last host activity).
+    """
+    try:
+        host_token = request.cookies.get('host_token')
+        host_room = request.cookies.get('host_room')
+        if host_token and host_room:
+            with lock:
+                room = rooms.get(host_room)
+                if room and room.get('host_token') == host_token:
+                    # update last activity
+                    room['last_host_activity'] = time.time()
+                    # refresh host cookies to give the host a full COOKIE_TTL from now
+                    response.set_cookie('host_token', host_token, max_age=COOKIE_TTL)
+                    response.set_cookie('host_room', host_room, max_age=COOKIE_TTL)
+    except Exception:
+        # never block response on refresh errors
+        pass
+    return response
+
+
 @app.route('/enter', methods=['GET'])
 def enter_room():
     # simple helper page to enter a room name
@@ -414,6 +442,39 @@ def api_players(room_name):
             'chat_colors': room.get('chat_colors', {}),
             'roles': room.get('roles', [])
         }
+        # also include lightweight game-state pieces so player clients can render moderator dashboard
+        data['phase'] = room.get('phase', 'lobby')
+        data['night_step'] = room.get('night_step')
+        data['last_night_events'] = room.get('last_night_events', {})
+        data['last_night_killed'] = (room.get('last_night_events') or {}).get('killed', [])
+        data['last_night_muted'] = (room.get('last_night_events') or {}).get('muted', None)
+        # include a compact current_night_step description
+        nstep = _current_night_step(room)
+        if nstep and nstep.get('info'):
+            data['current_night_step'] = {'index': nstep.get('index'), 'name': nstep.get('info').get('name'), 'actions': nstep.get('info').get('actions')}
+        else:
+            data['current_night_step'] = None
+        # indicate whether the current night step already has an action recorded on the server
+        try:
+            if nstep and nstep.get('info'):
+                step_actions = nstep.get('info', {}).get('actions', []) or []
+                na = room.get('night_actions', {})
+                data['current_night_step_completed'] = any(a in na for a in step_actions)
+            else:
+                data['current_night_step_completed'] = False
+        except Exception:
+            data['current_night_step_completed'] = False
+
+        # indicate whether the current night step already has an action recorded on the server
+        try:
+            if nstep and nstep.get('info'):
+                step_actions = nstep.get('info', {}).get('actions', []) or []
+                na = room.get('night_actions', {})
+                data['current_night_step_completed'] = any(a in na for a in step_actions)
+            else:
+                data['current_night_step_completed'] = False
+        except Exception:
+            data['current_night_step_completed'] = False
 
         # Determine the requesting player (prefer player_name cookie, fallback to device mapping)
         requester = request.cookies.get('player_name')
@@ -613,7 +674,8 @@ def _should_auto_advance(room):
     if name == 'cop':
         if 'cop_check' in actions:
             return True
-        if not _any_alive_with_role_keyword(room, 'cop') and not _any_alive_with_role_keyword(room, 'sheriff') and not _any_alive_with_role_keyword(room, 'detective'):
+        # Sheriff is a separate role that mutes (does not perform cop checks). Only cop/detective roles count here.
+        if not _any_alive_with_role_keyword(room, 'cop') and not _any_alive_with_role_keyword(room, 'detective'):
             return True
         return False
 
@@ -1080,7 +1142,8 @@ def api_night_action(room_name):
             return jsonify({'success': True})
 
         if action_type == 'cop_check':
-            if lowrole.find('cop') == -1 and lowrole.find('sheriff') == -1 and lowrole.find('detective') == -1:
+            # Only Cop or Detective may perform investigative checks; Sheriff does NOT reveal roles (it mutes instead).
+            if lowrole.find('cop') == -1 and lowrole.find('detective') == -1:
                 return jsonify({'error': 'Only Cop/Sheriff/Detective may perform this action'}), 403
             actions['cop_check'] = target
             if _should_auto_advance(room):
@@ -1122,8 +1185,10 @@ def api_night_action(room_name):
             return jsonify({'success': True})
 
         if action_type == 'sheriff_mute':
-            # sheriff role allowed too
-            # allow sheriff to mute; presence of key indicates action taken
+            # Only Sheriff may perform mute actions at this step
+            if lowrole.find('sheriff') == -1:
+                return jsonify({'error': 'Only Sheriff may perform this action'}), 403
+            # presence of key indicates action taken; value may be None for explicit no-mute
             actions['sheriff_mute'] = target
             if _should_auto_advance(room):
                 _advance_night_step(room)
@@ -1152,6 +1217,9 @@ def api_game_state(room_name):
             'phase': room.get('phase', 'lobby'),
             'night_step': room.get('night_step'),
             'last_night_events': room.get('last_night_events', {}),
+            # convenience top-level fields for clients that want flat access
+            'last_night_killed': (room.get('last_night_events') or {}).get('killed', []),
+            'last_night_muted': (room.get('last_night_events') or {}).get('muted', None),
             'alive_players': _alive_players(room),
             'game_started': room.get('game_started', False),
             'game_over': room.get('game_over', False),

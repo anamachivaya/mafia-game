@@ -162,6 +162,61 @@
           assignEl.innerHTML = '<div class="role-block">No assignments yet.</div>';
           window.assignmentMap = {};
         }
+        // Populate read-only moderator dashboard for spectators
+        try {
+          // Ensure dashboard exists (append above footer)
+          let dash = document.getElementById('spectatorModeratorDashboard');
+          if (!dash) {
+            const d = document.createElement('div');
+            d.className = 'card';
+            d.style.maxWidth = '900px';
+            d.style.margin = '1.25rem auto';
+            d.id = 'spectatorModeratorDashboard';
+            d.innerHTML = `
+              <h3 style="margin-top:0;">Game Status</h3>
+              <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                <div style="flex:1; min-width:160px;">
+                  <div class="small">Phase</div>
+                  <div style="font-weight:800; font-size:1.05rem;" id="pdPhase">—</div>
+                  <div class="small" style="margin-top:0.5rem;">Night step</div>
+                  <div style="font-weight:700;" id="pdNightStep">—</div>
+                </div>
+                <div style="flex:1; min-width:160px;">
+                  <div class="small">Last night killed</div>
+                  <div style="font-weight:700;" id="pdLastKilled">—</div>
+                  <div class="small" style="margin-top:0.5rem;">Last night muted</div>
+                  <div style="font-weight:700;" id="pdLastMuted">—</div>
+                </div>
+                <div style="flex:1; min-width:220px;">
+                  <div class="small">Last night events</div>
+                  <div id="pdLastEvents" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:130px; overflow:auto;">—</div>
+                </div>
+              </div>
+            `;
+            // insert before footer
+            const footer = document.querySelector('.footer');
+            footer.parentNode.insertBefore(d, footer);
+            dash = d;
+          }
+
+          const pdPhase = document.getElementById('pdPhase');
+          const pdNightStep = document.getElementById('pdNightStep');
+          const pdLastKilled = document.getElementById('pdLastKilled');
+          const pdLastMuted = document.getElementById('pdLastMuted');
+          const pdLastEvents = document.getElementById('pdLastEvents');
+          if (pdPhase) pdPhase.textContent = data.phase || '—';
+          if (pdNightStep) pdNightStep.textContent = data.current_night_step ? (data.current_night_step.name || '') + (data.current_night_step.index != null ? ` (step ${data.current_night_step.index})` : '') : '—';
+          const killedList = (data.last_night_killed && data.last_night_killed.length) ? data.last_night_killed : (data.last_night_events && data.last_night_events.killed ? data.last_night_events.killed : []);
+          const mutedVal = (data.last_night_muted !== undefined && data.last_night_muted !== null) ? data.last_night_muted : (data.last_night_events ? data.last_night_events.muted : null);
+          if (pdLastKilled) pdLastKilled.textContent = (killedList && killedList.length) ? killedList.join(', ') : '—';
+          if (pdLastMuted) pdLastMuted.textContent = (mutedVal) ? mutedVal : '—';
+          if (pdLastEvents) {
+            const parts = [];
+            if (killedList && killedList.length) parts.push('<b>Killed:</b> ' + killedList.join(', '));
+            if (mutedVal) parts.push('<b>Muted:</b> ' + mutedVal);
+            pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+          }
+        } catch (e) { console.warn('Could not render spectator dashboard', e); }
       } catch (e) {
         console.error('Error fetching assignments for spectator', e);
       }

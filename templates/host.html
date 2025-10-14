@@ -486,12 +486,31 @@
         <button class="btn" id="advanceNightBtn" onclick="advanceNightStep()">Advance Night Step</button>
         <button class="btn btn-danger" id="lynchBtn" onclick="lynchPlayer()">Lynch (End of Day)</button>
       </div>
-      <div style="margin-top:0.75rem;">
-        <div class="small">Phase: <span id="currentPhase">Lobby</span></div>
-        <div class="small">Night step: <span id="nightStepDisplay">—</span></div>
-        <div class="small">Last night killed: <span id="lastKilled">—</span></div>
-        <div class="small">Last night muted: <span id="lastMuted">—</span></div>
-        <div class="small">Winner: <span id="gameWinner">—</span></div>
+      <div style="margin-top:0.75rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
+        <div style="flex:1; min-width:200px;">
+          <div class="small">Phase</div>
+          <div style="font-weight:800; font-size:1.05rem;"> <span id="currentPhase">Lobby</span></div>
+          <div class="small" style="margin-top:0.5rem;">Night step</div>
+          <div style="font-weight:700;"> <span id="nightStepDisplay">—</span></div>
+          <div class="small" style="margin-top:0.5rem;">Mafia chooser</div>
+          <div id="mafiaChooser" style="font-weight:700;">—</div>
+        </div>
+
+        <div style="flex:1; min-width:200px;">
+          <div class="small">Last night killed</div>
+          <div style="font-weight:700;"> <span id="lastKilled">—</span></div>
+          <div class="small" style="margin-top:0.5rem;">Last night muted</div>
+          <div style="font-weight:700;"> <span id="lastMuted">—</span></div>
+          <div class="small" style="margin-top:0.5rem;">Winner</div>
+          <div style="font-weight:700;"> <span id="gameWinner">—</span></div>
+        </div>
+
+        <div style="flex:1; min-width:220px;">
+          <div class="small">Pending night actions</div>
+          <div id="pendingActions" style="font-weight:700; margin-bottom:0.4rem;">—</div>
+          <div class="small">Last night events</div>
+          <div id="lastNightEventsList" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:130px; overflow:auto;">—</div>
+        </div>
       </div>
     </div>
 
@@ -704,17 +723,41 @@
       try {
         const body = `player_name=${encodeURIComponent(name)}&suicide_target=${encodeURIComponent(suicide||'')}`;
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/lynch`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
-        const d = await resp.json();
-        if (d.success) {
+        // Be tolerant of non-JSON or HTML responses (some edge cases return text/html).
+        // Try to parse JSON first, fall back to raw text.
+        let text = '';
+        try {
+          text = await resp.text();
+        } catch (e) {
+          console.warn('Could not read lynch response body', e);
+        }
+
+        let d = null;
+        try { d = text ? JSON.parse(text) : null; } catch (e) { d = null; }
+
+        if (!resp.ok) {
+          // server returned an error status
+          const errMsg = (d && d.error) ? d.error : (text || `HTTP ${resp.status}`);
+          alert('Lynch failed: ' + errMsg);
+          return;
+        }
+
+        // If JSON present and indicates success, show details.
+        if (d && d.success) {
           showToast(`Lynched ${d.lynched}` + (d.suicide_killed ? ` — suicide killed ${d.suicide_killed}` : ''), 2200);
           closeLynchModal();
           setTimeout(refresh, 200);
-        } else {
-          alert('Lynch failed: ' + (d.error || 'unknown'));
+          return;
         }
+
+        // If we got a 200 OK but couldn't parse JSON, assume the operation succeeded on server
+        // (this is defensive: the server sometimes returns non-JSON in edge cases). Close modal and refresh.
+        showToast(`Lynched ${name}`, 1800);
+        closeLynchModal();
+        setTimeout(refresh, 200);
       } catch (e) {
         console.error('lynch submit error', e);
-        alert('Error submitting lynch');
+        alert('Error submitting lynch: ' + (e && e.message ? e.message : String(e)));
       }
     }
 
@@ -1222,6 +1265,46 @@
           lastMutedEl.textContent = gs.last_night_events.muted || '—';
         }
         if (gs && winnerEl) winnerEl.textContent = gs.winner || '—';
+        // mafia chooser display (if present in night actions)
+        try {
+          const mafiaChooserEl = document.getElementById('mafiaChooser');
+          const pendingEl = document.getElementById('pendingActions');
+          const lastEventsEl = document.getElementById('lastNightEventsList');
+
+          if (mafiaChooserEl) {
+            let chooser = '—';
+            if (gs && gs.current_night_actions && gs.current_night_actions.mafia_final_chooser) chooser = gs.current_night_actions.mafia_final_chooser;
+            mafiaChooserEl.textContent = chooser;
+          }
+
+          if (pendingEl) {
+            let pending = '—';
+            if (gs && gs.current_night_actions) {
+              // count acted keys (presence semantics: value !== undefined means acted)
+              const actionKeys = Object.keys(gs.current_night_actions).filter(k => !k.endsWith('_chooser') && k !== 'mafia_final_chooser');
+              const acted = actionKeys.filter(k => gs.current_night_actions[k] !== undefined && gs.current_night_actions[k] !== null).length;
+              const totalPlayers = (gs && gs.players) ? gs.players.length : 0;
+              pending = Math.max(0, totalPlayers - acted);
+            }
+            pendingEl.textContent = pending;
+          }
+
+          if (lastEventsEl) {
+            if (gs && gs.last_night_events) {
+              const parts = [];
+              if (gs.last_night_events.killed && gs.last_night_events.killed.length) parts.push('<b>Killed:</b> ' + gs.last_night_events.killed.join(', '));
+              if (gs.last_night_events.muted && gs.last_night_events.muted.length) parts.push('<b>Muted:</b> ' + gs.last_night_events.muted.join(', '));
+              if (gs.last_night_events.framed && gs.last_night_events.framed.length) parts.push('<b>Framed:</b> ' + gs.last_night_events.framed.join(', '));
+              if (gs.last_night_events.cop_results && Object.keys(gs.last_night_events.cop_results).length) {
+                const cops = Object.keys(gs.last_night_events.cop_results).map(k => `${k}: ${gs.last_night_events.cop_results[k]}`);
+                parts.push('<b>Cop:</b> ' + cops.join('; '));
+              }
+              lastEventsEl.innerHTML = parts.length ? parts.join('<br>') : '—';
+            } else {
+              lastEventsEl.textContent = '—';
+            }
+          }
+        } catch (e) { /* ignore UI update errors */ }
 
         // enable/disable moderator buttons depending on phase and game state
         const startGameBtn = document.getElementById('startGameBtn');
