@@ -262,7 +262,8 @@
     </div>
     
     <div class="button-group">
-  <!-- Removed manual refresh: players view role automatically via the main page -->
+  <!-- Show/Hide role toggle -->
+      <button id="toggleRoleBtn" class="btn btn-primary" onclick="toggleRoleVisibility(); return false;">Hide Role</button>
       
       <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
         <input type="hidden" name="player_name" value="{{ name }}">
@@ -395,6 +396,47 @@
 
     function hideEliminationOverlay() {
       document.getElementById('eliminationOverlay').style.display = 'none';
+    }
+
+    // Role visibility toggle
+    let roleVisible = true;
+    function toggleRoleVisibility() {
+      try {
+        roleVisible = !roleVisible;
+        const roleBadge = document.getElementById('roleBadge');
+        const roleDescription = document.getElementById('roleDescription');
+        const toggleBtn = document.getElementById('toggleRoleBtn');
+        const warningMessage = document.getElementById('warningMessage');
+        const teammatesSection = document.getElementById('visibleTeammatesSection');
+        const teammatesList = document.getElementById('visibleTeammatesList');
+        // faction badges shown on this screen (e.g., next to roleBadge and teammates)
+        const factionBadges = document.querySelectorAll('.faction-unified');
+        if (roleVisible) {
+          if (roleBadge) roleBadge.style.display = 'block';
+          if (roleDescription) roleDescription.style.display = 'block';
+          if (warningMessage) warningMessage.style.display = 'block';
+          // only show teammates section if it actually has items
+          if (teammatesSection && teammatesList && teammatesList.children && teammatesList.children.length) {
+            teammatesSection.style.display = 'block';
+          }
+          // show faction badges (restore default display)
+          if (factionBadges && factionBadges.length) {
+            factionBadges.forEach(b => { b.style.display = ''; });
+          }
+          if (toggleBtn) toggleBtn.textContent = 'Hide Role';
+        } else {
+          if (roleBadge) roleBadge.style.display = 'none';
+          if (roleDescription) roleDescription.style.display = 'none';
+          if (warningMessage) warningMessage.style.display = 'none';
+          // hide the teammates section when the role is hidden (useful for mafia players)
+          if (teammatesSection) teammatesSection.style.display = 'none';
+          // hide faction badges when role hidden
+          if (factionBadges && factionBadges.length) {
+            factionBadges.forEach(b => { b.style.display = 'none'; });
+          }
+          if (toggleBtn) toggleBtn.textContent = 'Show Role';
+        }
+      } catch (e) { console.warn('toggleRoleVisibility failed', e); }
     }
 
     function updateEliminationStatus(eliminated) {

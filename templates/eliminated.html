@@ -242,9 +242,9 @@
       }
     }
 
-    // fetch immediately and poll
-    fetchAssignmentsForSpectator();
-    setInterval(fetchAssignmentsForSpectator, 3000);
+  // fetch immediately and poll (reduced frequency to avoid perceived constant refresh)
+  fetchAssignmentsForSpectator();
+  setInterval(fetchAssignmentsForSpectator, 10000);
 
     // Chat functionality for waiting room spectators with dedupe and colors
     (function(){
@@ -397,11 +397,22 @@
             es.onmessage = function(evt){
               try{
                 const payload = JSON.parse(evt.data);
-                // If server sent kick notification, and it targets this player, clear cookies and redirect
-                if (payload.message && payload.message.type === 'kick' && payload.message.target === PLAYER_NAME){
-                  document.cookie = 'player_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                  document.cookie = 'room_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                  try{ alert('You have been kicked from the lobby by the host. Returning to home page.'); }catch(e){}
+                // If server sent kick OR explicit return notification targeted to this player,
+                // clear cookies and redirect them back to home so home() can route them to the
+                // appropriate pre-game screen (thanks/role selection).
+                if (payload.message && (payload.message.type === 'kick' || payload.message.type === 'return') && payload.message.target === PLAYER_NAME){
+                  try{
+                    // For explicit restart messages, inform the user and redirect them to the
+                    // waiting/thanks screen where they will be able to wait for the next role
+                    // assignment. We intentionally do NOT clear cookies here so `home()` will
+                    // render `thanks.html` (waiting screen) for this player.
+                    if (payload.message.type === 'return' && payload.message.code === 'restart'){
+                      alert('The game has been restarted. Returning you to the waiting screen for the next round.');
+                    } else {
+                      alert('Returning you to the waiting screen.');
+                    }
+                  }catch(e){}
+                  // Redirect to home — with cookies preserved this will show the thanks/waiting page
                   window.location.href = '{{ url_for("home") }}';
                   return;
                 }

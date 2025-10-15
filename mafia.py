@@ -1400,6 +1400,7 @@ def api_restart(room_name):
                 room['chat_colors']['Server'] = 'hsl(210,20%,70%)'
 
             for p in eliminated_before:
+                # legacy/compat message (kick) kept for older clients
                 mid = room.get('chat_next_id', 1)
                 room['chat_next_id'] = mid + 1
                 msg = {
@@ -1414,6 +1415,23 @@ def api_restart(room_name):
                     'target': p
                 }
                 room['chat'].append(msg)
+                # Add an explicit, dedicated return-to-lobby system message so clients
+                # can reliably detect a restart action. This is more descriptive and
+                # future-proof than reusing 'kick'.
+                mid2 = room.get('chat_next_id', 1)
+                room['chat_next_id'] = mid2 + 1
+                return_msg = {
+                    'id': mid2,
+                    'sender': 'Server',
+                    'text': f'Please return to the lobby: {p}',
+                    'ts': int(time.time()),
+                    'client_id': None,
+                    'color': room['chat_colors'].get('Server'),
+                    'type': 'return',
+                    'code': 'restart',
+                    'target': p
+                }
+                room['chat'].append(return_msg)
             # trim chat history
             if len(room['chat']) > 1000:
                 room['chat'] = room['chat'][-1000:]
