@@ -514,6 +514,12 @@
       </div>
     </div>
 
+    <!-- Winner banner (hidden until game over) -->
+    <div id="winnerBanner" style="display:none; margin-top:1rem; padding:1rem; border-radius:8px; text-align:center; font-weight:800; font-size:1.1rem;
+                 background:#071024; border:1px solid rgba(255,255,255,0.03);">
+      <span id="winnerText">Winner: —</span>
+    </div>
+
     <!-- Lynch Modal -->
     <div id="lynchModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1200;">
       <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:320px; border:1px solid rgba(255,255,255,0.04);">
@@ -1317,29 +1323,54 @@
           startNightBtn.disabled = true;
           startDayBtn.disabled = true;
           lynchBtn.disabled = true;
-        } else if (gs.phase === 'lobby' || gs.phase === 'finished') {
-          startGameBtn.disabled = false;
-          startNightBtn.disabled = true;
-          startDayBtn.disabled = true;
-          lynchBtn.disabled = true;
-        } else if (gs.phase === 'night') {
-          startGameBtn.disabled = true;
-          startNightBtn.disabled = true;
-          startDayBtn.disabled = false; // host resolves night to day
-          lynchBtn.disabled = true;
-          // when in night, allow advancing steps manually
-          document.getElementById('advanceNightBtn').disabled = false;
-        } else if (gs.phase === 'day') {
-          startGameBtn.disabled = true;
-          startNightBtn.disabled = false; // start next night after lynch
-          startDayBtn.disabled = true;
-          lynchBtn.disabled = false; // host can submit lynch
+          // show winner banner
+          try {
+            const wb = document.getElementById('winnerBanner');
+            const wt = document.getElementById('winnerText');
+            if (wb && wt) {
+              wt.textContent = 'Winner: ' + (gs.winner || '—');
+              wb.style.display = 'block';
+              if ((gs.winner || '').toLowerCase() === 'mafia') wb.style.background = 'linear-gradient(90deg,#7f1d1d,#b91c1c)';
+              else if ((gs.winner || '').toLowerCase() === 'villagers') wb.style.background = 'linear-gradient(90deg,#064e3b,#059669)';
+              else wb.style.background = '#071024';
+            }
+          } catch (e) {}
         } else {
-          // default safe state
-          startGameBtn.disabled = false;
-          startNightBtn.disabled = false;
-          startDayBtn.disabled = false;
-          lynchBtn.disabled = false;
+          // hide/reset winner banner when game is not over (e.g., after restart)
+          try {
+            const wb = document.getElementById('winnerBanner');
+            const wt = document.getElementById('winnerText');
+            if (wb && wt) {
+              wb.style.display = 'none';
+              wt.textContent = 'Winner: —';
+            }
+          } catch (e) {}
+
+          // follow the original phase-based enable/disable logic
+          if (gs.phase === 'lobby' || gs.phase === 'finished') {
+            startGameBtn.disabled = false;
+            startNightBtn.disabled = true;
+            startDayBtn.disabled = true;
+            lynchBtn.disabled = true;
+          } else if (gs.phase === 'night') {
+            startGameBtn.disabled = true;
+            startNightBtn.disabled = true;
+            startDayBtn.disabled = false; // host resolves night to day
+            lynchBtn.disabled = true;
+            // when in night, allow advancing steps manually
+            document.getElementById('advanceNightBtn').disabled = false;
+          } else if (gs.phase === 'day') {
+            startGameBtn.disabled = true;
+            startNightBtn.disabled = false; // start next night after lynch
+            startDayBtn.disabled = true;
+            lynchBtn.disabled = false; // host can submit lynch
+          } else {
+            // default safe state
+            startGameBtn.disabled = false;
+            startNightBtn.disabled = false;
+            startDayBtn.disabled = false;
+            lynchBtn.disabled = false;
+          }
         }
       } catch (e) {
         // ignore game-state fetch errors

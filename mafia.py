@@ -1650,6 +1650,17 @@ def api_kill_player(room_name):
         # Add player to eliminated list
         room['eliminated_players'].append(player_name)
 
+        # check win condition after host elimination and set finished state if applicable
+        try:
+            winner = _check_win_condition(room)
+            if winner:
+                room['game_over'] = True
+                room['winner'] = winner
+                room['phase'] = 'finished'
+        except Exception:
+            # non-fatal if win check fails
+            pass
+
     return jsonify({'success': True, 'message': f'{player_name} has been eliminated'})
 
 

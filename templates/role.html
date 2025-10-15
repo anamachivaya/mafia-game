@@ -273,6 +273,11 @@
     <div class="last-updated" id="lastUpdated">Last checked: —</div>
   </div>
 
+  <!-- Winner banner for players -->
+  <div id="winnerBannerPlayer" style="display:none; position:fixed; left:50%; transform:translateX(-50%); top:12px; z-index:1300; padding:0.8rem 1rem; border-radius:8px; font-weight:900; color:#fff; background:#111; box-shadow:0 8px 24px rgba(0,0,0,0.6);">
+    <span id="winnerBannerText">Winner: —</span>
+  </div>
+
   <!-- Read-only Moderator Dashboard for players (no action buttons) -->
   <div class="card" style="max-width:900px; margin: 1.25rem auto;" id="playerModeratorDashboard">
     <h3 style="margin-top:0;">Game Status</h3>
@@ -477,6 +482,25 @@
         const now = new Date();
         document.getElementById('lastUpdated').textContent = 
           'Last checked: ' + now.toLocaleTimeString();
+
+        // show winner banner if game over
+        try {
+          const gsResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/game-state`, { cache: 'no-store' });
+          if (gsResp && gsResp.ok) {
+            const gs = await gsResp.json();
+            if (gs && gs.game_over) {
+              const wb = document.getElementById('winnerBannerPlayer');
+              const wbt = document.getElementById('winnerBannerText');
+              if (wb && wbt) {
+                wbt.textContent = 'Winner: ' + (gs.winner || '—');
+                wb.style.display = 'block';
+                if ((gs.winner || '').toLowerCase() === 'mafia') wb.style.background = 'linear-gradient(90deg,#7f1d1d,#b91c1c)';
+                else if ((gs.winner || '').toLowerCase() === 'villagers') wb.style.background = 'linear-gradient(90deg,#064e3b,#059669)';
+                else wb.style.background = '#111';
+              }
+            }
+          }
+        } catch (e) { /* non-fatal */ }
 
         // Populate read-only moderator dashboard from players response if available
         try {

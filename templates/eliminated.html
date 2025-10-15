@@ -101,6 +101,11 @@
     </form>
   </div>
 
+  <!-- Winner banner for spectators -->
+  <div id="winnerBannerSpectator" style="display:none; position:fixed; left:50%; transform:translateX(-50%); top:12px; z-index:1200; padding:0.8rem 1rem; border-radius:8px; font-weight:900; color:#fff; background:#111; box-shadow:0 8px 24px rgba(0,0,0,0.6);">
+    <span id="winnerBannerSpectatorText">Winner: —</span>
+  </div>
+
   <div class="footer">
     Created by Scissors. Powered by Sunisha and Diet Coke
     {% if player_ip %}
@@ -162,6 +167,21 @@
           assignEl.innerHTML = '<div class="role-block">No assignments yet.</div>';
           window.assignmentMap = {};
         }
+        // show winner banner if game over
+        try {
+          const gs = { phase: data.phase, game_over: data.game_over, winner: data.winner };
+          if (gs && gs.game_over) {
+            const wb = document.getElementById('winnerBannerSpectator');
+            const wbt = document.getElementById('winnerBannerSpectatorText');
+            if (wb && wbt) {
+              wbt.textContent = 'Winner: ' + (gs.winner || '—');
+              wb.style.display = 'block';
+              if ((gs.winner || '').toLowerCase() === 'mafia') wb.style.background = 'linear-gradient(90deg,#7f1d1d,#b91c1c)';
+              else if ((gs.winner || '').toLowerCase() === 'villagers') wb.style.background = 'linear-gradient(90deg,#064e3b,#059669)';
+              else wb.style.background = '#111';
+            }
+          }
+        } catch (e) { /* ignore */ }
         // Populate read-only moderator dashboard for spectators
         try {
           // Ensure dashboard exists (append above footer)
