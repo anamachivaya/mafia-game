@@ -743,7 +743,7 @@
           const visible = data.visible_roles || [];
           const section = document.getElementById('visibleTeammatesSection');
           const list = document.getElementById('visibleTeammatesList');
-          if (visible && visible.length) {
+          if (visible && visible.length && roleVisible) {
             section.style.display = 'block';
             list.innerHTML = '';
             visible.forEach(v => {
