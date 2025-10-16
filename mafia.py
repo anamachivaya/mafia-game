@@ -517,6 +517,23 @@ def api_players(room_name):
                 data['suicide_prompt'] = {'active': False}
         except Exception:
             data['suicide_prompt'] = {'active': False}
+
+        # expose voting state for players so clients can show current voter and running log
+        try:
+            voting = room.get('voting') or {}
+            if voting:
+                data['voting'] = {
+                    'active': bool(voting.get('active')),
+                    'current_voter': voting.get('current_voter'),
+                    'votes_log': list(voting.get('votes_log', [])),
+                    'tally': dict(voting.get('tally', {})),
+                    'reset': bool(voting.get('reset', False))
+                }
+            else:
+                data['voting'] = {'active': False}
+        except Exception:
+            data['voting'] = {'active': False}
+
     return jsonify(data)
 
 @app.route('/api/rooms/<room_name>/roles', methods=['POST'])
@@ -547,6 +564,125 @@ def api_add_role(room_name):
 
     with lock:
         room['roles'].append({'name': role_name, 'count': count, 'faction': role_faction})
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/rooms/<room_name>/start-voting', methods=['POST'])
+def api_start_voting(room_name):
+    """Host starts a day voting sequence. Randomize prompt order and initialize voting state.
+    Only host may start voting."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        # only allow when in day phase
+        if room.get('phase') != 'day':
+            return jsonify({'error': 'Voting may only be started during day phase'}), 400
+
+        alive = _alive_players(room)
+        import random
+        order = alive[:]
+        random.shuffle(order)
+
+        room['voting'] = {
+            'active': True,
+            'order': order,
+            'current_index': 0,
+            'current_voter': order[0] if order else None,
+            'tally': {},
+            'votes_log': []  # list of {voter, choice}
+        }
+        # bump voting version so SSE clients can detect an initial state change
+        room['voting_version'] = room.get('voting_version', 0) + 1
+
+    return jsonify({'success': True, 'order': order})
+
+
+@app.route('/api/rooms/<room_name>/vote', methods=['POST'])
+def api_submit_vote(room_name):
+    """Endpoint for players to submit their vote during a running voting session.
+    Expects form param 'choice'. The requesting player must be the current voter.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    requester = request.cookies.get('player_name')
+    if not requester:
+        return jsonify({'error': 'Unauthorized - must be a player in room'}), 403
+
+    choice = request.form.get('choice', '').strip()
+    if not choice:
+        return jsonify({'error': 'choice is required'}), 400
+
+    with lock:
+        voting = room.get('voting')
+        if not voting or not voting.get('active'):
+            return jsonify({'error': 'No active voting session'}), 400
+
+        current = voting.get('current_voter')
+        if requester != current:
+            return jsonify({'error': 'Not your turn to vote', 'current_voter': current}), 403
+
+        # only allow voting for alive players
+        if choice not in _alive_players(room):
+            return jsonify({'error': 'Invalid vote target'}), 400
+
+        # record vote
+        voting.setdefault('votes_log', []).append({'voter': requester, 'choice': choice})
+        voting.setdefault('tally', {})[choice] = voting.setdefault('tally', {}).get(choice, 0) + 1
+
+        # bump voting version so SSE clients know voting state changed
+        room['voting_version'] = room.get('voting_version', 0) + 1
+
+        # advance to next voter
+        idx = voting.get('current_index', 0) + 1
+        if idx >= len(voting.get('order', []) if voting.get('order') else []):
+            # voting complete
+            voting['active'] = False
+            voting['current_index'] = None
+            voting['current_voter'] = None
+            # attach last_day_events.votes maybe for host summary
+            room['last_day_events'] = room.get('last_day_events', {})
+            room['last_day_events']['votes_log'] = list(voting.get('votes_log', []))
+        else:
+            voting['current_index'] = idx
+            voting['current_voter'] = voting.get('order', [])[idx]
+
+    return jsonify({'success': True, 'next_voter': room.get('voting', {}).get('current_voter'), 'tally': room.get('voting', {}).get('tally', {})})
+
+
+@app.route('/api/rooms/<room_name>/reset-voting', methods=['POST'])
+def api_reset_voting(room_name):
+    """Host-only: clear current voting state for the room and notify clients.
+    This allows the host to reset the voting dashboard for everyone so they can start a new voting round.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        # clear voting state but include an explicit reset flag so clients can react immediately
+        room['voting'] = {
+            'active': False,
+            'current_voter': None,
+            'votes_log': [],
+            'tally': {},
+            'reset': True
+        }
+        room['voting_version'] = room.get('voting_version', 0) + 1
 
     return jsonify({'success': True})
 
@@ -1357,6 +1493,22 @@ def api_game_state(room_name):
             data['mafia_final'] = None
             data['mafia_final_chooser'] = None
 
+        # expose voting state for host/players via game-state too
+        try:
+            voting = room.get('voting') or {}
+            if voting:
+                data['voting'] = {
+                    'active': bool(voting.get('active')),
+                    'current_voter': voting.get('current_voter'),
+                    'votes_log': list(voting.get('votes_log', [])),
+                    'tally': dict(voting.get('tally', {})),
+                    'reset': bool(voting.get('reset', False))
+                }
+            else:
+                data['voting'] = {'active': False}
+        except Exception:
+            data['voting'] = {'active': False}
+
     return jsonify(data)
 
 
@@ -1715,6 +1867,49 @@ def api_room_chat_stream(room_name):
             time.sleep(0.5)
 
     return Response(event_stream(), mimetype='text/event-stream')
+
+
+@app.route('/api/rooms/<room_name>/voting/stream')
+def api_room_voting_stream(room_name):
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    def voting_stream():
+        import time, json
+        # send initial voting snapshot if present
+        last_version = room.get('voting_version', 0)
+        with lock:
+            v = room.get('voting') or {}
+            payload = {'voting': {
+                'active': bool(v.get('active')),
+                'current_voter': v.get('current_voter'),
+                'votes_log': list(v.get('votes_log', [])),
+                'tally': dict(v.get('tally', {})),
+                'version': room.get('voting_version', 0)
+            }}
+        yield 'data: ' + json.dumps(payload) + '\n\n'
+
+        # stream updates as voting_version increments
+        while True:
+            with lock:
+                cur_version = room.get('voting_version', 0)
+                if cur_version != last_version:
+                    v2 = room.get('voting') or {}
+                    payload2 = {'voting': {
+                        'active': bool(v2.get('active')),
+                        'current_voter': v2.get('current_voter'),
+                        'votes_log': list(v2.get('votes_log', [])),
+                        'tally': dict(v2.get('tally', {})),
+                        'version': cur_version
+                    }}
+                    last_version = cur_version
+                    yield 'data: ' + json.dumps(payload2) + '\n\n'
+            # heartbeat
+            yield ': heartbeat\n\n'
+            time.sleep(0.5)
+
+    return Response(voting_stream(), mimetype='text/event-stream')
 
 # Add endpoint to reload role descriptions
 @app.route("/api/reload-descriptions", methods=["POST"])

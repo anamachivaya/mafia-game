@@ -317,9 +317,28 @@
         <div class="small" style="margin-top:0.5rem;">Last night muted</div>
         <div style="font-weight:700;" id="pdLastMuted">—</div>
       </div>
-      <div style="flex:1; min-width:220px;">
-        <div class="small">Last night events</div>
-        <div id="pdLastEvents" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:130px; overflow:auto;">—</div>
+      <div style="flex:1; min-width:220px; display:flex; flex-direction:column; gap:0.5rem;">
+        <div>
+          <div class="small">Last night events</div>
+          <div id="pdLastEvents" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:80px; overflow:auto;">—</div>
+        </div>
+        <div>
+          <div class="small">Voting</div>
+          <div id="votingDashboard" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:160px; overflow:auto; display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+              <div style="font-weight:700;">Status: <span id="vdVotingStatus">—</span></div>
+              <div style="font-size:0.9rem; color:#94a3b8;">Current: <span id="vdCurrentVoter">—</span></div>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.25rem;">Tally</div>
+              <div id="vdTally" style="display:flex; gap:0.5rem; flex-wrap:wrap;">—</div>
+            </div>
+            <div>
+              <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.25rem;">Vote Log</div>
+              <div id="vdVoteLog" style="max-height:62px; overflow:auto; font-size:0.9rem;">—</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -370,6 +389,18 @@
     </div>
   </div>
 
+  <!-- Voting modal shown to the current voter when a voting session is active -->
+  <div id="votingModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1260;">
+    <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:520px; border:1px solid rgba(255,255,255,0.04);">
+      <h3 style="margin:0 0 0.5rem 0; color:#f1f5f9;">Voting — It's your turn</h3>
+      <div style="margin-bottom:0.5rem; color:#cbd5e1;">Select a player to vote for lynching. The host and other players can watch who is voting and the running vote log.</div>
+      <div id="votingChoices" style="display:flex; flex-direction:column; gap:0.5rem; max-height:320px; overflow:auto; margin-top:0.5rem;"></div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.75rem;">
+        <button class="btn" onclick="closeVotingModal()">Skip</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Action confirmation modal -->
   <div id="actionConfirmModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1220;">
     <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:420px; border:1px solid rgba(255,255,255,0.04);">
@@ -395,8 +426,12 @@
     const PLAYER_NAME = '{{ name | e }}';
     const ROOM_NAME = '{{ room_name | e }}';
     
-    let isEliminated = false;
-    let hasShownEliminationMessage = false;
+  let isEliminated = false;
+  let hasShownEliminationMessage = false;
+  // Persist last-known voting snapshot on the client so the voting dashboard
+  // remains visible until the next Day phase begins (server-driven).
+  let persistentVotingSnapshot = null;
+  let lastSeenPhaseForVoting = null;
 
     function escapeHtml(str) {
       const p = document.createElement('p');
@@ -609,6 +644,100 @@
             pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
           }
         } catch (e) { /* ignore dashboard binding errors */ }
+        // Voting UI: persistent voting dashboard (separate from last events)
+        try {
+          const voting = data.voting || null;
+          const vd = document.getElementById('votingDashboard');
+          const vdStatus = document.getElementById('vdVotingStatus');
+          const vdCurrent = document.getElementById('vdCurrentVoter');
+          const vdTally = document.getElementById('vdTally');
+          const vdLog = document.getElementById('vdVoteLog');
+
+          function renderTally(tally) {
+            if (!vdTally) return;
+            vdTally.innerHTML = '';
+            if (!tally || Object.keys(tally).length === 0) {
+              vdTally.textContent = '—';
+              return;
+            }
+            const entries = Object.entries(tally).sort((a,b)=> b[1]-a[1]);
+            for (const [name, count] of entries) {
+              const el = document.createElement('div');
+              el.style.padding = '0.25rem 0.5rem';
+              el.style.background = '#0b1220';
+              el.style.border = '1px solid rgba(255,255,255,0.03)';
+              el.style.borderRadius = '6px';
+              el.style.fontWeight = '700';
+              el.textContent = `${name}: ${count}`;
+              vdTally.appendChild(el);
+            }
+          }
+
+          function renderLog(votes_log) {
+            if (!vdLog) return;
+            if (!votes_log || !votes_log.length) {
+              vdLog.textContent = '—';
+              return;
+            }
+            vdLog.innerHTML = '';
+            for (const l of votes_log.slice(-20)) {
+              const el = document.createElement('div');
+              el.style.padding = '2px 0';
+              el.textContent = `${l.voter} → ${l.choice}`;
+              vdLog.appendChild(el);
+            }
+          }
+
+          // Update persistent snapshot and render. The client persists the last-known voting snapshot
+          // until the server announces the Day phase (per requirement).
+          if (voting) {
+            // If server explicitly indicates a reset, clear the persistent snapshot immediately.
+            if (voting.reset) {
+              persistentVotingSnapshot = null;
+              if (vd) vd.style.display = 'none';
+              if (vdStatus) vdStatus.textContent = '—';
+              if (vdCurrent) vdCurrent.textContent = '—';
+              if (vdTally) vdTally.textContent = '—';
+              if (vdLog) vdLog.textContent = '—';
+            } else {
+              // Always refresh the persistent snapshot with any voting info we receive from server
+              persistentVotingSnapshot = voting;
+            }
+          }
+
+          // Only clear the persistent snapshot when we observe a full night->day transition.
+          // This ensures the voting dashboard persists for the remainder of the day after voting ends.
+          const phaseLower = data.phase ? data.phase.toLowerCase() : null;
+          if (phaseLower === 'day' && lastSeenPhaseForVoting && lastSeenPhaseForVoting.toLowerCase() === 'night') {
+            // We have seen a night since the last snapshot — clear it now at start of the new day
+            persistentVotingSnapshot = null;
+            if (vd) vd.style.display = 'none';
+            if (vdStatus) vdStatus.textContent = '—';
+            if (vdCurrent) vdCurrent.textContent = '—';
+            if (vdTally) vdTally.textContent = '—';
+            if (vdLog) vdLog.textContent = '—';
+          } else if (persistentVotingSnapshot) {
+            // Render the last-known snapshot and keep it visible until Day phase arrives
+            if (vd) vd.style.display = 'block';
+            if (vdStatus) vdStatus.textContent = (persistentVotingSnapshot.active ? 'ACTIVE' : 'ENDED');
+            if (vdCurrent) vdCurrent.textContent = persistentVotingSnapshot.current_voter || '—';
+            renderTally(persistentVotingSnapshot.tally || {});
+            renderLog(persistentVotingSnapshot.votes_log || []);
+
+            // If it's this player's turn (snapshot may indicate current_voter), show voting modal
+            if (persistentVotingSnapshot.current_voter === PLAYER_NAME && persistentVotingSnapshot.active) {
+              const aliveChoices = data.players.filter(p => !(data.eliminated_players||[]).includes(p));
+              renderVotingChoices(aliveChoices);
+              try { document.getElementById('votingModal').style.display = 'flex'; } catch(e) {}
+            }
+          } else {
+            // No snapshot and not Day — keep dashboard hidden
+            if (vd) vd.style.display = 'none';
+          }
+
+          // remember last seen phase for potential future logic
+          lastSeenPhaseForVoting = data.phase || lastSeenPhaseForVoting;
+        } catch (e) { console.warn('Voting dashboard update failed', e); }
         // Render visible teammates if provided (e.g., mafia members)
         try {
           const visible = data.visible_roles || [];
@@ -740,6 +869,58 @@
       } catch (e) {
         console.error('submitSuicideChoice error', e);
         alert('Error submitting final act');
+      }
+    }
+
+    // Voting modal helpers
+    function renderVotingChoices(choices) {
+      const container = document.getElementById('votingChoices');
+      container.innerHTML = '';
+      if (!choices || !choices.length) {
+        const p = document.createElement('div'); p.textContent = 'No players available to vote for.'; container.appendChild(p); return;
+      }
+      for (const c of choices) {
+        const el = document.createElement('div');
+        el.className = 'suicide-choice'; // reuse style for compact tiles
+        el.tabIndex = 0;
+        el.dataset.name = c;
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = c;
+
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-danger';
+        btn.textContent = 'Vote';
+        btn.onclick = () => { if (confirm(`Confirm vote for ${c}?`)) submitVote(c); };
+
+        el.appendChild(name);
+        el.appendChild(btn);
+        container.appendChild(el);
+      }
+    }
+
+    function closeVotingModal() {
+      try { document.getElementById('votingModal').style.display = 'none'; } catch(e) {}
+    }
+
+    async function submitVote(choice) {
+      try {
+        const form = new URLSearchParams();
+        form.append('choice', choice);
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/vote`, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: form.toString() });
+        const d = await resp.json();
+        if (d && d.success) {
+          showToast('Vote submitted', 900);
+          closeVotingModal();
+          // refresh immediately so players and host see updated log/tally
+          setTimeout(() => { checkEliminationStatus(); }, 250);
+        } else {
+          alert('Vote failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('submitVote error', e);
+        alert('Error submitting vote');
       }
     }
 

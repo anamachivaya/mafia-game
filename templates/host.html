@@ -480,11 +480,11 @@
     <div class="panel" id="gameControls">
       <h3>Moderator Controls</h3>
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
-        <button class="btn btn-success" id="startGameBtn" onclick="startGame()">Start Game</button>
-        <button class="btn" id="startNightBtn" onclick="startNight()">Start Night</button>
-        <button class="btn" id="startDayBtn" onclick="startDay()">Start Day</button>
-        <button class="btn" id="advanceNightBtn" onclick="advanceNightStep()">Advance Night Step</button>
-        <button class="btn btn-danger" id="lynchBtn" onclick="lynchPlayer()">Lynch (End of Day)</button>
+  <button class="btn btn-success" id="startGameBtn" onclick="startGame()">Start Game</button>
+  <button class="btn" id="startNightBtn" onclick="startNight()">Start Night</button>
+  <button class="btn" id="startDayBtn" onclick="startDay()">Start Day</button>
+  <button class="btn" id="advanceNightBtn" onclick="advanceNightStep()">Advance Night Step</button>
+  <button class="btn btn-danger" id="lynchBtn" onclick="lynchPlayer()">Lynch (End of Day)</button>
       </div>
       <div style="margin-top:0.75rem; display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
         <div style="flex:1; min-width:200px;">
@@ -510,6 +510,33 @@
           <div id="pendingActions" style="font-weight:700; margin-bottom:0.4rem;">—</div>
           <div class="small">Last night events</div>
           <div id="lastNightEventsList" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:130px; overflow:auto;">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voting Dashboard: separate panel for voting UI -->
+    <div class="panel" id="votingDashboard" style="display:block;">
+      <h3>Voting Dashboard</h3>
+      <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
+        <div style="flex:1; min-width:220px;">
+          <div class="small">Voting status</div>
+          <div id="votingStatus" style="font-weight:800; font-size:1rem;">—</div>
+          <div class="small" style="margin-top:0.5rem;">Current voter</div>
+          <div id="votingCurrent" style="font-weight:700; font-size:1.05rem;">—</div>
+              <div style="margin-top:0.75rem; display:flex; gap:0.5rem; align-items:center;">
+                <button class="btn btn-primary" id="startVotingBtn" onclick="startVoting()">Start Voting</button>
+                <button class="btn" id="resetVotingBtn" style="background:#374151; color:#e2e8f0;" onclick="resetVoting()">Reset Voting</button>
+              </div>
+        </div>
+
+        <div style="flex:1.2; min-width:260px;">
+          <div class="small">Vote tally (players with >=1 vote)</div>
+          <div id="votingTally" style="background:#071024; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:220px; overflow:auto;">—</div>
+        </div>
+
+        <div style="flex:1.4; min-width:260px;">
+          <div class="small">Vote log (running)</div>
+          <div id="votingLog" style="background:#071024; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:220px; overflow:auto;">—</div>
         </div>
       </div>
     </div>
@@ -677,6 +704,41 @@
       } catch (e) {
         console.error('startNight error', e);
         alert('Error starting night');
+      }
+    }
+
+    async function startVoting() {
+      if (!confirm('Start a sequential voting round where players are prompted one-by-one to vote?')) return;
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/start-voting`, { method: 'POST' });
+        const d = await resp.json();
+        if (d && d.success) {
+          showToast('Voting started', 1200);
+          setTimeout(refresh, 200);
+        } else {
+          alert('Start voting failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('startVoting error', e);
+        alert('Error starting voting');
+      }
+    }
+
+    async function resetVoting() {
+      if (!confirm('Reset voting for all players? This will clear the current voting dashboard.')) return;
+      try {
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/reset-voting`, { method: 'POST' });
+        const d = await resp.json();
+        if (d && d.success) {
+          showToast('Voting reset', 900);
+          // refresh host UI; SSE will also push the cleared state
+          setTimeout(refresh, 150);
+        } else {
+          alert('Reset voting failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('resetVoting error', e);
+        alert('Error resetting voting');
       }
     }
 
@@ -1310,6 +1372,61 @@
           }
         } catch (e) { /* ignore UI update errors */ }
 
+        // Voting UI updates (from game-state or players payload)
+        try {
+          const votingCurrentEl = document.getElementById('votingCurrent');
+          const votingTallyEl = document.getElementById('votingTally');
+          const votingLogEl = document.getElementById('votingLog');
+          const votingStatusEl = document.getElementById('votingStatus');
+          // prefer game-state voting info if provided, else players response 'voting'
+          let voting = (gs && gs.voting) ? gs.voting : null;
+          if (!voting && typeof data !== 'undefined' && data && data.voting) voting = data.voting;
+
+          // Use persistentHostVotingSnapshot if available so host UI persists after voting ends
+          const snapshot = persistentHostVotingSnapshot || voting;
+          if (snapshot && snapshot.reset) {
+            // explicit reset: clear UI
+            if (votingStatusEl) votingStatusEl.textContent = '—';
+            if (votingCurrentEl) votingCurrentEl.textContent = '—';
+            if (votingTallyEl) votingTallyEl.textContent = '—';
+            if (votingLogEl) votingLogEl.textContent = '—';
+          } else if (snapshot) {
+            // keep the last-known data visible; show Active when running, Ended when finished
+            if (snapshot.active) {
+              if (votingStatusEl) votingStatusEl.textContent = 'Active';
+              if (votingCurrentEl) votingCurrentEl.textContent = snapshot.current_voter || '—';
+            } else {
+              if (votingStatusEl) votingStatusEl.textContent = 'Ended';
+              if (votingCurrentEl) votingCurrentEl.textContent = snapshot.current_voter || '—';
+            }
+            // render tally
+            const t = snapshot.tally || {};
+            const keys = Object.keys(t).filter(k => (t[k] || 0) > 0).sort((a,b)=> (t[b]||0)-(t[a]||0) || a.localeCompare(b));
+            if (votingTallyEl) {
+              if (keys.length) {
+                votingTallyEl.innerHTML = keys.map(k => `<div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;"><span>${escapeHtml(k)}</span><strong>${t[k]}</strong></div>`).join('');
+              } else {
+                votingTallyEl.textContent = '—';
+              }
+            }
+            // render running log
+            const log = snapshot.votes_log || [];
+            if (votingLogEl) {
+              if (log.length) {
+                votingLogEl.innerHTML = log.map(l => `<div style="margin-bottom:0.25rem;">${escapeHtml(l.voter)} → <strong>${escapeHtml(l.choice)}</strong></div>`).join('');
+              } else {
+                votingLogEl.textContent = '—';
+              }
+            }
+          } else {
+            // no snapshot: hide/clear
+            if (votingStatusEl) votingStatusEl.textContent = '—';
+            if (votingCurrentEl) votingCurrentEl.textContent = '—';
+            if (votingTallyEl) votingTallyEl.textContent = '—';
+            if (votingLogEl) votingLogEl.textContent = '—';
+          }
+        } catch (e) { /* ignore voting UI errors */ }
+
         // enable/disable moderator buttons depending on phase and game state
         const startGameBtn = document.getElementById('startGameBtn');
         const startNightBtn = document.getElementById('startNightBtn');
@@ -1583,6 +1700,96 @@
         console.warn('Host chat start failed', e);
       }
     }
+
+    // --- Voting SSE for instant host updates ---
+    let votingEventSource = null;
+    let votingReconnectTimeout = 500;
+  // persist last-known voting snapshot on host so dashboard doesn't auto-clear when voting ends
+  let persistentHostVotingSnapshot = null;
+
+    function startVotingStream() {
+      if (votingEventSource) return;
+      try {
+        votingEventSource = new EventSource(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/voting/stream`);
+        votingEventSource.onmessage = (e) => {
+          try {
+            const payload = JSON.parse(e.data);
+            if (!payload || !payload.voting) return;
+            const v = payload.voting;
+            // update DOM
+            const votingStatusEl = document.getElementById('votingStatus');
+            const votingCurrentEl = document.getElementById('votingCurrent');
+            const votingTallyEl = document.getElementById('votingTally');
+            const votingLogEl = document.getElementById('votingLog');
+            // If server signals an explicit reset, clear the host snapshot/UI immediately
+            if (v && v.reset) {
+              persistentHostVotingSnapshot = null;
+              if (votingStatusEl) votingStatusEl.textContent = '—';
+              if (votingCurrentEl) votingCurrentEl.textContent = '—';
+              if (votingTallyEl) votingTallyEl.textContent = '—';
+              if (votingLogEl) votingLogEl.textContent = '—';
+            } else if (v) {
+              // update persistent snapshot with any voting info we receive
+              persistentHostVotingSnapshot = v;
+
+              // Render snapshot: show Active when running, otherwise show Ended but keep tally/log
+              if (v.active) {
+                if (votingStatusEl) votingStatusEl.textContent = 'Active';
+                if (votingCurrentEl) votingCurrentEl.textContent = v.current_voter || '—';
+              } else {
+                if (votingStatusEl) votingStatusEl.textContent = 'Ended';
+                if (votingCurrentEl) votingCurrentEl.textContent = v.current_voter || '—';
+              }
+
+              // tally (render from snapshot)
+              if (votingTallyEl) {
+                const t = (v.tally || {});
+                const entries = Object.entries(t).filter(([k, c]) => (c || 0) > 0).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
+                if (entries.length) {
+                  votingTallyEl.innerHTML = entries.map(([k,c]) => `<div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;"><span>${escapeHtml(k)}</span><strong>${c}</strong></div>`).join('');
+                } else {
+                  votingTallyEl.textContent = '—';
+                }
+              }
+
+              // votes log
+              if (votingLogEl) {
+                const log = (v.votes_log || []);
+                if (Array.isArray(log) && log.length) {
+                  votingLogEl.innerHTML = log.map(l => `<div style="margin-bottom:0.25rem;">${escapeHtml(l.voter || l.from || '')} → <strong>${escapeHtml(l.choice || l.to || '')}</strong></div>`).join('');
+                } else {
+                  votingLogEl.textContent = '—';
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Voting SSE parse error', err);
+          }
+        };
+
+        votingEventSource.onerror = (err) => {
+          console.warn('Voting SSE error', err);
+          // close and attempt reconnect with backoff
+          stopVotingStream();
+          setTimeout(() => {
+            votingReconnectTimeout = Math.min(30000, votingReconnectTimeout * 1.5);
+            startVotingStream();
+          }, votingReconnectTimeout);
+        };
+      } catch (e) {
+        console.warn('Could not start voting SSE', e);
+      }
+    }
+
+    function stopVotingStream() {
+      if (votingEventSource) {
+        try { votingEventSource.close(); } catch (e) {}
+        votingEventSource = null;
+      }
+    }
+
+    // start voting SSE immediately for host page so dashboard updates instantly
+    startVotingStream();
 
     function stopHostChatStream() {
       if (hostChatEventSource) {
