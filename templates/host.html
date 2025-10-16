@@ -520,6 +520,11 @@
       <span id="winnerText">Winner: —</span>
     </div>
 
+    <!-- Toast notification for brief messages before redirects (host) -->
+    <div id="toast" style="display:none; position: fixed; left: 50%; transform: translateX(-50%); bottom: 12vh; background: rgba(0,0,0,0.7); color: #fff; padding: 0.8rem 1.2rem; border-radius: 8px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,0.5); z-index: 1100;">
+      <span id="toastMessage">Message</span>
+    </div>
+
     <!-- Lynch Modal -->
     <div id="lynchModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1200;">
       <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:320px; border:1px solid rgba(255,255,255,0.04);">
@@ -528,10 +533,7 @@
           <label class="small">Player to lynch</label>
           <select id="lynchTarget" style="width:100%; padding:0.5rem; margin-top:0.25rem; border-radius:6px; background:#111827; color:#f1f5f9; border:1px solid #334155;"></select>
         </div>
-        <div style="margin-bottom:0.75rem;">
-          <label class="small">Suicide bomber target (optional)</label>
-          <select id="lynchSuicideTarget" style="width:100%; padding:0.5rem; margin-top:0.25rem; border-radius:6px; background:#111827; color:#f1f5f9; border:1px solid #334155;"></select>
-        </div>
+        <!-- Suicide bomber target removed: server still accepts no suicide_target, UI no longer exposes this option -->
         <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
           <button class="btn" onclick="closeLynchModal()">Cancel</button>
           <button class="btn btn-danger" onclick="submitLynch()">Submit</button>
@@ -699,11 +701,9 @@
     }
 
     function openLynchModal() {
-      // populate selects with alive players
+      // populate select with alive players
       const targetSel = document.getElementById('lynchTarget');
-      const suicideSel = document.getElementById('lynchSuicideTarget');
       targetSel.innerHTML = '';
-      suicideSel.innerHTML = '<option value="">(none)</option>';
       // gather from current player list
       const opts = Array.from(document.querySelectorAll('#playerList li')).map(li => {
         const name = li.querySelector('.player-name').textContent.replace(' 💀','').trim();
@@ -712,7 +712,6 @@
 
       for (const p of opts) {
         const o = document.createElement('option'); o.value = p.name; o.textContent = p.name; targetSel.appendChild(o);
-        const o2 = document.createElement('option'); o2.value = p.name; o2.textContent = p.name; suicideSel.appendChild(o2);
       }
 
       document.getElementById('lynchModal').style.display = 'flex';
@@ -724,10 +723,9 @@
 
     async function submitLynch() {
       const name = document.getElementById('lynchTarget').value;
-      const suicide = document.getElementById('lynchSuicideTarget').value || '';
       if (!name) { alert('Select a player to lynch'); return; }
       try {
-        const body = `player_name=${encodeURIComponent(name)}&suicide_target=${encodeURIComponent(suicide||'')}`;
+        const body = `player_name=${encodeURIComponent(name)}`;
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/lynch`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
         // Be tolerant of non-JSON or HTML responses (some edge cases return text/html).
         // Try to parse JSON first, fall back to raw text.
@@ -1642,6 +1640,26 @@
         });
       }
     } catch (e) { /* ignore DOM hookup errors */ }
+    
+    // Toast utility for host page (mirrors player `showToast`) 
+    function showToast(msg, ms = 1200) {
+      try {
+        const toast = document.getElementById('toast');
+        const msgEl = document.getElementById('toastMessage');
+        if (!toast || !msgEl) return;
+        msgEl.textContent = msg;
+        toast.style.display = 'block';
+        // fade in
+        toast.style.opacity = 0;
+        toast.style.transition = 'opacity 160ms ease';
+        requestAnimationFrame(() => { toast.style.opacity = 1; });
+        setTimeout(() => {
+          // fade out
+          toast.style.opacity = 0;
+          setTimeout(() => { toast.style.display = 'none'; }, 220);
+        }, ms);
+      } catch (e) { console.warn('Toast failed', e); }
+    }
   </script>
   <script>
     async function copyJoinLink() {

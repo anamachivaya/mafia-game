@@ -228,6 +228,28 @@
       font-size: 12px;
       box-shadow: 0 4px 14px rgba(16,185,129,0.16);
     }
+    /* Suicide modal choice styles */
+    .suicide-choice {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.6rem 0.75rem;
+      background: #071022;
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
+      color: #e2e8f0;
+      font-weight: 700;
+    }
+    .suicide-choice:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(2,6,23,0.6); }
+    .suicide-choice.disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+    .suicide-choice .name { flex: 1; text-align: left; }
+    .suicide-choice .check { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; }
+    .suicide-choice .check.hidden { visibility: hidden; }
+    .suicide-choice.selected { background: linear-gradient(90deg,#7c3aed,#2563eb); border-color: rgba(124,58,237,0.6); color: white; }
+    .suicide-choice.selected .check { background: rgba(255,255,255,0.12); color: #fff; box-shadow: 0 6px 18px rgba(37,99,235,0.18); }
   </style>
 </head>
 <body>
@@ -332,6 +354,19 @@
       <button class="btn btn-primary" onclick="window.location.href='/watch/' + encodeURIComponent(ROOM_NAME)" style="margin-top: 1rem;">
         Continue Watching
       </button>
+    </div>
+  </div>
+
+  <!-- Suicide bomber prompt modal (shown only to the bomber if lynched) -->
+  <div id="suicideModal" style="display:none; position:fixed; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1250;">
+    <div style="background:#0b1220; padding:1rem 1.25rem; border-radius:10px; width:420px; border:1px solid rgba(255,255,255,0.04);">
+      <h3 style="margin:0 0 0.5rem 0; color:#f1f5f9;">Final Act — Choose a Target</h3>
+      <div style="margin-bottom:0.5rem; color:#cbd5e1;">You have been lynched and your role allows a final act. Choose one player to eliminate with you.</div>
+      <div id="suicideChoices" style="display:flex; flex-direction:column; gap:0.5rem; max-height:240px; overflow:auto; margin-top:0.5rem;"></div>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:0.75rem;">
+        <button class="btn" onclick="closeSuicideModal()">Skip</button>
+        <button class="btn btn-danger" id="suicideSubmitBtn" onclick="submitSuicideChoice()">Submit</button>
+      </div>
     </div>
   </div>
 
@@ -506,6 +541,16 @@
         
         updateEliminationStatus(isPlayerEliminated);
 
+        // If server indicates a pending suicide prompt for this player, render the modal choices
+        try {
+          const sp = data.suicide_prompt || { active: false };
+          if (sp && sp.active) {
+            // populate and show modal
+            renderSuicideChoices(sp.choices || []);
+            document.getElementById('suicideModal').style.display = 'flex';
+          }
+        } catch (e) { console.warn('suicide prompt render error', e); }
+
         // If the host has restarted the game, assignments may be cleared and game_started will be false.
         // In that case, redirect this player back to the waiting/thanks page so they see the lobby.
         const gameStarted = !!data.game_started;
@@ -599,6 +644,104 @@
     // Check elimination status immediately and then every 3 seconds
     checkEliminationStatus();
     setInterval(checkEliminationStatus, 3000);
+
+    // Suicide modal helpers
+    function renderSuicideChoices(choices) {
+      const container = document.getElementById('suicideChoices');
+      // remember previously selected choice (if any) so we can restore it after re-render
+      const prevSelected = container && container.dataset && container.dataset.selected ? container.dataset.selected : '';
+      container.innerHTML = '';
+      // disable submit until a selection is made
+      try { document.getElementById('suicideSubmitBtn').disabled = true; } catch(e) {}
+      if (!choices || !choices.length) {
+        const p = document.createElement('div'); p.textContent = 'No valid targets available.'; container.appendChild(p); return;
+      }
+      for (const c of choices) {
+        const el = document.createElement('div');
+        el.className = 'suicide-choice';
+        el.tabIndex = 0;
+        el.dataset.name = c;
+
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = c;
+
+        const check = document.createElement('div');
+        check.className = 'check hidden';
+        check.innerHTML = '✓';
+
+        el.appendChild(name);
+        el.appendChild(check);
+
+        // click and keyboard support
+        const selectFn = () => {
+          if (el.classList.contains('disabled')) return;
+          // clear previous
+          Array.from(container.querySelectorAll('.suicide-choice')).forEach(s => {
+            s.classList.remove('selected');
+            const ch = s.querySelector('.check'); if (ch) ch.classList.add('hidden');
+          });
+          el.classList.add('selected');
+          const ch = el.querySelector('.check'); if (ch) ch.classList.remove('hidden');
+          container.dataset.selected = c;
+          try { document.getElementById('suicideSubmitBtn').disabled = false; } catch(e) {}
+          // keep focus on the selected element so keyboard users see persistent highlight
+          try { el.focus(); } catch(e) {}
+        };
+
+        el.addEventListener('click', selectFn);
+        el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); selectFn(); } });
+
+        container.appendChild(el);
+      }
+      // restore previous selection if it still exists in the new choices
+      try {
+        if (prevSelected) {
+          const restored = Array.from(container.querySelectorAll('.suicide-choice')).find(s => s.dataset && s.dataset.name === prevSelected);
+          if (restored) {
+            // simulate selection without re-triggering event handlers
+            restored.classList.add('selected');
+            const ch = restored.querySelector('.check'); if (ch) ch.classList.remove('hidden');
+            container.dataset.selected = prevSelected;
+            try { document.getElementById('suicideSubmitBtn').disabled = false; } catch(e) {}
+            try { restored.focus(); } catch(e) {}
+          }
+        }
+      } catch (e) { /* non-fatal */ }
+    }
+
+    function closeSuicideModal() {
+      try { 
+        const modal = document.getElementById('suicideModal');
+        modal.style.display = 'none'; 
+        // clear selection
+        const container = document.getElementById('suicideChoices');
+        if (container) { container.innerHTML = ''; container.dataset.selected = ''; }
+        try { document.getElementById('suicideSubmitBtn').disabled = true; } catch(e) {}
+      } catch (e) {}
+    }
+
+    async function submitSuicideChoice() {
+      try {
+        const container = document.getElementById('suicideChoices');
+        const selected = container && container.dataset && container.dataset.selected ? container.dataset.selected : null;
+        if (!selected) { alert('Select a player to eliminate with you'); return; }
+        const form = new URLSearchParams();
+        form.append('target', selected);
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/suicide`, { method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'}, body: form.toString() });
+        const d = await resp.json();
+        if (d && d.success) {
+          showToast('Final act submitted — you have been eliminated', 1600);
+          // after a short delay redirect to watch page (eliminated view)
+          setTimeout(() => { window.location.replace(`/watch/${encodeURIComponent(ROOM_NAME)}`); }, 1600);
+        } else {
+          alert('Submission failed: ' + (d.error || 'unknown'));
+        }
+      } catch (e) {
+        console.error('submitSuicideChoice error', e);
+        alert('Error submitting final act');
+      }
+    }
 
   // Night action handling
   let lastKnownPhase = null;

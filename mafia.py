@@ -485,7 +485,7 @@ def api_players(room_name):
                     requester = p['name']
                     break
 
-        # Provide visible roles tailored to the requesting player (e.g., mafia see other mafias and their roles)
+    # Provide visible roles tailored to the requesting player (e.g., mafia see other mafias and their roles)
         visible = []
         if data['game_started'] and requester and requester in room.get('assignments', {}):
             # ensure assignment_factions exists
@@ -504,6 +504,19 @@ def api_players(room_name):
                         })
 
         data['visible_roles'] = visible
+        # If this requesting player has a pending suicide prompt (host-initiated lynch of a suicide bomber),
+        # surface it so the player's client can render a prompt before being moved to eliminated state.
+        try:
+            requester_name = requester
+            pending = room.get('pending_suicide', {}) or {}
+            if requester_name and requester_name in pending:
+                # provide choices (alive players excluding self)
+                choices = pending.get(requester_name, {}).get('choices', [])
+                data['suicide_prompt'] = {'active': True, 'choices': choices}
+            else:
+                data['suicide_prompt'] = {'active': False}
+        except Exception:
+            data['suicide_prompt'] = {'active': False}
     return jsonify(data)
 
 @app.route('/api/rooms/<room_name>/roles', methods=['POST'])
@@ -570,8 +583,19 @@ def _init_night_state(room):
                 # pick one alive mafia at random deterministically using player list order
                 mafs = _alive_of_faction(room, 'mafia')
                 if mafs:
-                    # choose first alive mafia deterministically
-                    room['night_actions']['mafia_final_chooser'] = sorted(mafs)[0]
+                    # If there's exactly one alive mafia and their role is a suicide bomber,
+                    # promote them to the mafia_final_chooser so they can perform mafia_final
+                    # (this allows lone suicide bomber to act as mafia chooser at night).
+                    if len(mafs) == 1:
+                        lone = mafs[0]
+                        lone_role = room.get('assignments', {}).get(lone, '') or ''
+                        if (lone_role.lower().find('suicide') != -1 or lone_role.lower().find('bomber') != -1):
+                            room['night_actions']['mafia_final_chooser'] = lone
+                        else:
+                            room['night_actions']['mafia_final_chooser'] = sorted(mafs)[0]
+                    else:
+                        # choose first alive mafia deterministically
+                        room['night_actions']['mafia_final_chooser'] = sorted(mafs)[0]
                 else:
                     room['night_actions']['mafia_final_chooser'] = None
     except Exception:
@@ -914,16 +938,32 @@ def api_lynch(room_name):
         if not any(p['name'] == player_name for p in room.get('players', [])):
             return jsonify({'error': 'Player not found in room'}), 404
 
-        # eliminate the lynched player
+        # handle suicide bomber specially: if the lynched player's role indicates suicide bomber and
+        # no suicide_target provided, create a pending prompt for that player to choose a victim.
+        role = room.get('assignments', {}).get(player_name, '') or ''
+        is_suicide = (role.lower().find('suicide') != -1 or role.lower().find('bomber') != -1)
+
+        if is_suicide and not suicide_target:
+            # Build list of alive choices excluding the bomber themself
+            alive = [p['name'] for p in room.get('players', []) if p['name'] not in room.get('eliminated_players', []) and p['name'] != player_name]
+            # Initialize pending_suicide mapping if not present
+            room.setdefault('pending_suicide', {})
+            room['pending_suicide'][player_name] = {'choices': alive, 'created_at': time.time()}
+
+            # do NOT yet add the bomber to eliminated_players; wait for their selection endpoint
+            room['last_day_events'] = {'lynched': player_name, 'suicide_killed': None}
+
+            # return a special response indicating the bomber was prompted
+            return jsonify({'success': True, 'lynched': player_name, 'suicide_prompted': True, 'choices': alive, 'winner': room.get('winner')})
+
+        # eliminate the lynched player immediately (non-suicide or suicide with provided target)
         room.setdefault('eliminated_players', []).append(player_name)
 
-        # handle suicide bomber
-        role = room.get('assignments', {}).get(player_name, '') or ''
-        if role.lower().find('suicide') != -1 or role.lower().find('bomber') != -1:
-            if suicide_target and suicide_target not in room.get('eliminated_players', []):
-                # ensure target exists and is alive
-                if any(p['name'] == suicide_target for p in room.get('players', [])):
-                    room.setdefault('eliminated_players', []).append(suicide_target)
+        # if suicide_target provided, handle it
+        if is_suicide and suicide_target and suicide_target not in room.get('eliminated_players', []):
+            # ensure target exists and is alive
+            if any(p['name'] == suicide_target for p in room.get('players', [])):
+                room.setdefault('eliminated_players', []).append(suicide_target)
 
         # record daytime event
         room['last_day_events'] = {'lynched': player_name, 'suicide_killed': suicide_target}
@@ -1197,6 +1237,59 @@ def api_night_action(room_name):
         return jsonify({'error': 'Unknown action or not permitted for your role'}), 400
 
         # unreachable
+
+
+@app.route('/api/rooms/<room_name>/suicide', methods=['POST'])
+def api_suicide_choice(room_name):
+    """Endpoint called by a player who was lynched and is a suicide bomber.
+    Expects form param 'target' with the chosen victim's player name. The requesting player
+    must match a pending_suicide entry. Both the bomber and chosen target are then eliminated.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    requester = request.cookies.get('player_name')
+    if not requester:
+        return jsonify({'error': 'Unauthorized - must be a player in room'}), 403
+
+    target = request.form.get('target', '').strip()
+    if not target:
+        return jsonify({'error': 'target is required'}), 400
+
+    with lock:
+        pending = room.get('pending_suicide', {}) or {}
+        if requester not in pending:
+            return jsonify({'error': 'No pending suicide prompt for this player'}), 400
+
+        choices = pending.get(requester, {}).get('choices', [])
+        if target not in choices:
+            return jsonify({'error': 'Invalid target choice'}), 400
+
+        # perform eliminations: bomber (requester) and selected target (if still alive)
+        room.setdefault('eliminated_players', [])
+        if requester not in room['eliminated_players']:
+            room['eliminated_players'].append(requester)
+        if target not in room['eliminated_players']:
+            room['eliminated_players'].append(target)
+
+        # record daytime event
+        room['last_day_events'] = {'lynched': requester, 'suicide_killed': target}
+
+        # clear pending prompt for requester
+        try:
+            room.get('pending_suicide', {}).pop(requester, None)
+        except Exception:
+            pass
+
+        # check win condition
+        winner = _check_win_condition(room)
+        if winner:
+            room['game_over'] = True
+            room['winner'] = winner
+            room['phase'] = 'finished'
+
+    return jsonify({'success': True, 'lynched': requester, 'suicide_killed': target, 'winner': room.get('winner')})
 
 
 
