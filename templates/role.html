@@ -631,17 +631,28 @@
           const pdLastKilled = document.getElementById('pdLastKilled');
           const pdLastMuted = document.getElementById('pdLastMuted');
           const pdLastEvents = document.getElementById('pdLastEvents');
-          if (pdPhase) pdPhase.textContent = data.phase || '—';
-          if (pdNightStep) pdNightStep.textContent = data.current_night_step ? (data.current_night_step.name || '') + (data.current_night_step.index != null ? ` (step ${data.current_night_step.index})` : '') : '—';
-          const killedList = (data.last_night_killed && data.last_night_killed.length) ? data.last_night_killed : (data.last_night_events && data.last_night_events.killed ? data.last_night_events.killed : []);
-          const mutedVal = (data.last_night_muted !== undefined && data.last_night_muted !== null) ? data.last_night_muted : (data.last_night_events ? data.last_night_events.muted : null);
-          if (pdLastKilled) pdLastKilled.textContent = (killedList && killedList.length) ? killedList.join(', ') : '—';
-          if (pdLastMuted) pdLastMuted.textContent = (mutedVal) ? mutedVal : '—';
-          if (pdLastEvents) {
-            const parts = [];
-            if (killedList && killedList.length) parts.push('<b>Killed:</b> ' + killedList.join(', '));
-            if (mutedVal) parts.push('<b>Muted:</b> ' + mutedVal);
-            pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+          // If server indicates interactive_mode is false, hide phase/night info from players
+          const interactive = (typeof data.interactive_mode === 'undefined') ? true : !!data.interactive_mode;
+          if (!interactive) {
+            // hide phase info
+            if (pdPhase) pdPhase.textContent = '—';
+            if (pdNightStep) pdNightStep.textContent = '—';
+            if (pdLastKilled) pdLastKilled.textContent = '—';
+            if (pdLastMuted) pdLastMuted.textContent = '—';
+            if (pdLastEvents) pdLastEvents.textContent = '—';
+          } else {
+            if (pdPhase) pdPhase.textContent = data.phase || '—';
+            if (pdNightStep) pdNightStep.textContent = data.current_night_step ? (data.current_night_step.name || '') + (data.current_night_step.index != null ? ` (step ${data.current_night_step.index})` : '') : '—';
+            const killedList = (data.last_night_killed && data.last_night_killed.length) ? data.last_night_killed : (data.last_night_events && data.last_night_events.killed ? data.last_night_events.killed : []);
+            const mutedVal = (data.last_night_muted !== undefined && data.last_night_muted !== null) ? data.last_night_muted : (data.last_night_events ? data.last_night_events.muted : null);
+            if (pdLastKilled) pdLastKilled.textContent = (killedList && killedList.length) ? killedList.join(', ') : '—';
+            if (pdLastMuted) pdLastMuted.textContent = (mutedVal) ? mutedVal : '—';
+            if (pdLastEvents) {
+              const parts = [];
+              if (killedList && killedList.length) parts.push('<b>Killed:</b> ' + killedList.join(', '));
+              if (mutedVal) parts.push('<b>Muted:</b> ' + mutedVal);
+              pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+            }
           }
         } catch (e) { /* ignore dashboard binding errors */ }
         // Voting UI: persistent voting dashboard (separate from last events)
@@ -1053,6 +1064,14 @@
         const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/game-state`, { cache: 'no-store' });
         const gs = await resp.json();
         if (!gs) return;
+
+        // If interactive mode is disabled for this room, do not show night-step indicators or prompt for actions
+        try {
+          if (gs.interactive_mode === false) {
+            try { const stepEl = document.getElementById('nightStepIndicator'); if (stepEl) stepEl.textContent = ''; } catch(e) {}
+            return;
+          }
+        } catch(e) { /* ignore */ }
         // Show current night step indicator
         try {
           const stepEl = document.getElementById('nightStepIndicator');
@@ -1063,8 +1082,18 @@
           }
         } catch(e) {}
 
+  // Fetch players payload as well (we may fall back to its current_night_step)
+  let pdata = null;
+  try {
+    const alivePlayersResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+    pdata = await alivePlayersResp.json();
+  } catch (e) {
+    pdata = null;
+  }
+
   // If phase changed to night (entered) or the night_step changed, and player has an actionable role for that step, prompt
-  const stepChanged = (gs.phase === 'night' && lastKnownPhase !== 'night') || (gs.phase === 'night' && gs.current_night_step && gs.current_night_step.index !== lastKnownNightIndex);
+  const combinedStep = gs.current_night_step || (pdata && pdata.current_night_step) || null;
+  const stepChanged = (gs.phase === 'night' && lastKnownPhase !== 'night') || (gs.phase === 'night' && combinedStep && combinedStep.index !== lastKnownNightIndex);
         if (gs.phase === 'night') {
           // update mafia panel visibility and contents for mafia players
           // mafia coordination UI removed; however mafias still see visible teammates via visible_roles
@@ -1072,12 +1101,10 @@
           // determine player's role from DOM
           const role = document.getElementById('roleBadge').textContent || '';
           const low = role.toLowerCase();
-          const alivePlayersResp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
-          const pdata = await alivePlayersResp.json();
-          const alive = pdata.players.filter(p => !(pdata.eliminated_players||[]).includes(p));
+          const alive = (pdata && pdata.players) ? pdata.players.filter(p => !(pdata.eliminated_players||[]).includes(p)) : [];
           // determine what actions this player may perform for the current night step
           pendingActionType = null;
-          const step = gs.current_night_step;
+          const step = combinedStep || gs.current_night_step;
           if (step && step.actions && step.actions.length) {
             const acts = step.actions;
             // map role keywords to action types and only allow if included in acts

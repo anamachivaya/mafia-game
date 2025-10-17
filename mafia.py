@@ -504,6 +504,8 @@ def api_players(room_name):
                         })
 
         data['visible_roles'] = visible
+        # interactive_mode flag for clients (host may toggle)
+        data['interactive_mode'] = bool(room.get('interactive_mode', True))
         # If this requesting player has a pending suicide prompt (host-initiated lynch of a suicide bomber),
         # surface it so the player's client can render a prompt before being moved to eliminated state.
         try:
@@ -535,6 +537,29 @@ def api_players(room_name):
             data['voting'] = {'active': False}
 
     return jsonify(data)
+
+
+@app.route('/api/rooms/<room_name>/set-interactive', methods=['POST'])
+def api_set_interactive(room_name):
+    """Host-only: set interactive mode for the room. Expects form param 'interactive' as 'true'/'false'."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    val = request.form.get('interactive')
+    if val is None:
+        return jsonify({'error': 'interactive parameter required'}), 400
+
+    interactive = str(val).lower() in ['1', 'true', 'yes', 'on']
+    with lock:
+        room['interactive_mode'] = interactive
+
+    return jsonify({'success': True, 'interactive_mode': room['interactive_mode']})
 
 @app.route('/api/rooms/<room_name>/roles', methods=['POST'])
 def api_add_role(room_name):
@@ -1130,10 +1155,18 @@ def api_start_game(room_name):
         # require assignments to exist
         if not room.get('assignments'):
             return jsonify({'error': 'Roles not assigned'}), 400
-        # Mark game as started and immediately enter the first night
+        # Mark game as started
         _start_game(room)
-        # Initialize night state so Start Game behaves as before and enters night phase
-        _init_night_state(room)
+        # If interactive mode is enabled for this room, initialize night state and enter night phase
+        # Otherwise (non-interactive mode), avoid any night/day phase logic and keep the game in a non-interactive day state
+        if room.get('interactive_mode', True):
+            # Initialize night state so Start Game behaves as before and enters night phase
+            _init_night_state(room)
+        else:
+            # Non-interactive mode: set phase to 'day' and ensure no night state is initialized
+            room['phase'] = 'day'
+            room.pop('current_night_step', None)
+            room.pop('night_state', None)
 
     return jsonify({'success': True, 'phase': room.get('phase')})
 

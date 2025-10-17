@@ -479,6 +479,50 @@
 
     <div class="panel" id="gameControls">
       <h3>Moderator Controls</h3>
+      <style>
+        /* Simple slider-style switch */
+        .switch {
+          position: relative;
+          display: inline-block;
+          width: 56px;
+          height: 28px;
+        }
+        .switch input { display: none; }
+        .slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background-color: #334155;
+          transition: background-color 200ms ease;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.03);
+        }
+        .slider:before {
+          content: '';
+          position: absolute;
+          height: 22px;
+          width: 22px;
+          left: 3px;
+          top: 3px;
+          background-color: white;
+          border-radius: 50%;
+          transition: transform 160ms cubic-bezier(.2,.9,.2,1);
+        }
+        .switch input:checked + .slider { background-color: #059669; }
+        .switch input:checked + .slider:before { transform: translateX(28px); }
+        .interactive-label { display:inline-flex; align-items:center; gap:0.5rem; }
+      </style>
+      <div style="margin-bottom:0.75rem; display:flex; align-items:center; gap:0.75rem;">
+        <label style="font-weight:700;">Interactive mode</label>
+        <label class="interactive-label">
+          <span class="switch">
+            <input type="checkbox" id="interactiveModeToggle" checked />
+            <span class="slider" aria-hidden="true"></span>
+          </span>
+          <span class="small" id="interactiveModeLabel">On</span>
+        </label>
+        <div class="small" style="color:#94a3b8;">When off, players won't see night/day phase info and moderator UI is minimized.</div>
+      </div>
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
   <button class="btn btn-success" id="startGameBtn" onclick="startGame()">Start Game</button>
   <button class="btn" id="startNightBtn" onclick="startNight()">Start Night</button>
@@ -590,6 +634,88 @@
   </div>
 
   <script>
+    // interactive mode state (mirrors server-side value)
+    let interactiveMode = true;
+
+    async function setInteractiveOnServer(val) {
+      try {
+        const body = `interactive=${encodeURIComponent(val ? 'true' : 'false')}`;
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/set-interactive`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+        const d = await resp.json();
+        if (d && typeof d.interactive_mode !== 'undefined') {
+          interactiveMode = !!d.interactive_mode;
+          updateInteractiveUI();
+        }
+      } catch (e) { console.warn('Failed to persist interactive mode', e); }
+    }
+
+    function updateInteractiveUI() {
+      const toggle = document.getElementById('interactiveModeToggle');
+      const label = document.getElementById('interactiveModeLabel');
+      if (toggle) toggle.checked = !!interactiveMode;
+      if (label) label.textContent = interactiveMode ? 'On' : 'Off';
+      // When interactive mode is off, hide/disable moderator-only controls (Start Night, Start Day, Advance Night, Lynch)
+      // Keep Start Game and voting controls available at all times.
+      const startGameBtn = document.getElementById('startGameBtn');
+      const startNightBtn = document.getElementById('startNightBtn');
+      const startDayBtn = document.getElementById('startDayBtn');
+      const advanceNightBtn = document.getElementById('advanceNightBtn');
+      const lynchBtn = document.getElementById('lynchBtn');
+
+      if (!interactiveMode) {
+        // hide the moderator-only buttons
+        if (startNightBtn) { startNightBtn.style.display = 'none'; startNightBtn.disabled = true; }
+        if (startDayBtn) { startDayBtn.style.display = 'none'; startDayBtn.disabled = true; }
+        if (advanceNightBtn) { advanceNightBtn.style.display = 'none'; advanceNightBtn.disabled = true; }
+        if (lynchBtn) { lynchBtn.style.display = 'none'; lynchBtn.disabled = true; }
+
+        // clear phase info to avoid showing stale values
+        try {
+          const phaseEl = document.getElementById('currentPhase'); if (phaseEl) phaseEl.textContent = '—';
+          const nightStepEl = document.getElementById('nightStepDisplay'); if (nightStepEl) nightStepEl.textContent = '—';
+          const mafiaChooserEl = document.getElementById('mafiaChooser'); if (mafiaChooserEl) mafiaChooserEl.textContent = '—';
+          const pendingEl = document.getElementById('pendingActions'); if (pendingEl) pendingEl.textContent = '—';
+          const lastEventsEl = document.getElementById('lastNightEventsList'); if (lastEventsEl) lastEventsEl.textContent = '—';
+        } catch (e) {}
+      } else {
+        // restore moderator-only buttons
+        if (startNightBtn) { startNightBtn.style.display = ''; startNightBtn.disabled = false; }
+        if (startDayBtn) { startDayBtn.style.display = ''; startDayBtn.disabled = false; }
+        if (advanceNightBtn) { advanceNightBtn.style.display = ''; advanceNightBtn.disabled = false; }
+        if (lynchBtn) { lynchBtn.style.display = ''; lynchBtn.disabled = false; }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const t = document.getElementById('interactiveModeToggle');
+      if (t) {
+        t.addEventListener('change', (e) => {
+          interactiveMode = !!e.target.checked;
+          setInteractiveOnServer(interactiveMode);
+          updateInteractiveUI();
+        });
+        // keyboard accessibility: allow space to toggle when focused
+        t.addEventListener('keydown', (ev) => {
+          if (ev.key === ' ' || ev.key === 'Enter') {
+            ev.preventDefault();
+            t.checked = !t.checked;
+            t.dispatchEvent(new Event('change'));
+          }
+        });
+      }
+      // Initialize interactiveMode from server so checkbox reflects persisted state and UI is correct
+      (async function(){
+        try {
+          const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/players`, { cache: 'no-store' });
+          if (!resp.ok) return;
+          const d = await resp.json();
+          if (typeof d.interactive_mode !== 'undefined') {
+            interactiveMode = !!d.interactive_mode;
+            updateInteractiveUI();
+          }
+        } catch (e) { /* ignore */ }
+      })();
+    });
     const playerListEl = document.getElementById('playerList');
     const playerCountEl = document.getElementById('playerCount');
     const timeEl = document.getElementById('time');
