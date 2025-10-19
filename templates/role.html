@@ -9,6 +9,13 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mafia Game">
   <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
+  <script>
+    try {
+      if ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) {
+        document.documentElement.classList.add('has-touch');
+      }
+    } catch (e) {}
+  </script>
   <style>
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
@@ -110,14 +117,14 @@
       background: #2563eb; 
       color: white; 
     }
-    .btn-primary:hover { 
+    html:not(.has-touch) .btn-primary:hover { 
       background: #1e40af; 
     }
     .btn-danger { 
       background: #dc2626; 
       color: white; 
     }
-    .btn-danger:hover { 
+    html:not(.has-touch) .btn-danger:hover { 
       background: #b91c1c; 
     }
     .last-updated {
@@ -206,7 +213,7 @@
       transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease;
     }
     .target-tile.clickable { cursor: pointer; }
-    .target-tile.clickable:hover { transform: translateY(-4px); box-shadow: 0 8px 26px rgba(2,6,23,0.6); }
+  html:not(.has-touch) .target-tile.clickable:hover { transform: translateY(-4px); box-shadow: 0 8px 26px rgba(2,6,23,0.6); }
     .target-tile.disabled { opacity: 0.55; cursor: not-allowed; }
     .target-tile .player-name { font-weight:700; }
     .target-tile .tile-actions { display:flex; gap:0.5rem; }
@@ -243,7 +250,7 @@
       color: #e2e8f0;
       font-weight: 700;
     }
-    .suicide-choice:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(2,6,23,0.6); }
+  html:not(.has-touch) .suicide-choice:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(2,6,23,0.6); }
     .suicide-choice.disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
     .suicide-choice .name { flex: 1; text-align: left; }
     .suicide-choice .check { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; }

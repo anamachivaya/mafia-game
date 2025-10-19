@@ -9,6 +9,14 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Mafia Game">
   <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
+  <script>
+    // Mark touch-capable devices so CSS can avoid :hover rules on them.
+    try {
+      if ('ontouchstart' in window || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)) {
+        document.documentElement.classList.add('has-touch');
+      }
+    } catch (e) {}
+  </script>
   <style>
     body { 
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
@@ -50,14 +58,14 @@
       background: #059669; 
       color: white; 
     }
-    .btn-success:hover { 
+    html:not(.has-touch) .btn-success:hover { 
       background: #047857; 
     }
     .btn-danger { 
       background: #dc2626; 
       color: white; 
     }
-    .btn-danger:hover { 
+    html:not(.has-touch) .btn-danger:hover { 
       background: #b91c1c; 
     }
     .btn:disabled { 
@@ -166,7 +174,7 @@
       font-size: 0.8rem; 
       color: white;
     }
-    .remove-btn:hover {
+    html:not(.has-touch) .remove-btn:hover {
       background: #b91c1c;
     }
     
@@ -192,7 +200,7 @@
     /* initial (hidden) state to allow smooth entrance */
     .role-card { opacity: 0; transform: translateY(6px) scale(0.995); }
     .role-card.show { opacity: 1; transform: translateY(0) scale(1); }
-    .role-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(2,6,23,0.55); }
+  html:not(.has-touch) .role-card:hover { transform: translateY(-3px); box-shadow: 0 10px 30px rgba(2,6,23,0.55); }
     .role-card-header { display:flex; align-items:center; gap:0.5rem; }
     .role-card-title { font-weight:700; color: #f1f5f9; }
     .role-card-count { font-size:0.85rem; color:#94a3b8; }
@@ -255,7 +263,7 @@
     }
     .player-pill { opacity: 0; transform: translateY(6px); }
     .player-pill.show { opacity: 1; transform: translateY(0); }
-    .player-pill:hover { transform: translateY(-2px); background: rgba(255,255,255,0.03); }
+  html:not(.has-touch) .player-pill:hover { transform: translateY(-2px); background: rgba(255,255,255,0.03); }
     .player-pill .pill-actions { margin-left: 0.5rem; }
     .player-pill.eliminated { opacity: 0.7; text-decoration: line-through; }
 
@@ -287,7 +295,7 @@
       background: rgba(255,255,255,0.02); color: #f1f5f9; display:inline-flex; gap:0.5rem; align-items:center;
       transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
     }
-    .role-pool-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
+  html:not(.has-touch) .role-pool-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.5); }
     .role-pool-btn small { display:block; font-weight:600; font-size:0.75rem; color: rgba(255,255,255,0.85); }
     .role-pool-btn .role-dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:0.5rem; box-shadow:0 2px 8px rgba(0,0,0,0.35); }
     .role-pool-btn.faction-mafia { background: linear-gradient(180deg,#7f1d1d,#581414); color: #ffeaea; }
@@ -327,7 +335,7 @@
       cursor: pointer;
       transition: all 0.2s ease;
     }
-    .kill-btn:hover {
+    html:not(.has-touch) .kill-btn:hover {
       background: #b91c1c;
     }
     .kill-btn:disabled {
