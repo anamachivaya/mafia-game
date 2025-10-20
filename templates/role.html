@@ -832,6 +832,12 @@
                 if (lastAnnouncedVoter !== persistentVotingSnapshot.current_voter) {
                   lastAnnouncedVoter = persistentVotingSnapshot.current_voter;
                   speak("It's your turn to vote. Please select a player and confirm your vote.");
+                  try {
+                    // Vibrate once on mobile devices when it's the player's turn
+                    if (isMobileDevice() && 'vibrate' in navigator) {
+                      try { navigator.vibrate(200); } catch (e) { /* non-fatal */ }
+                    }
+                  } catch (e) { /* ignore vibration errors */ }
                 }
               } catch(e) {}
             }
@@ -1076,6 +1082,13 @@
     // global mute state (read from localStorage)
     function isSiteMuted() {
       try { return localStorage.getItem('siteMuted') === '1'; } catch(e) { return false; }
+    }
+
+    // Mobile detection helper (used for vibration)
+    function isMobileDevice() {
+      try {
+        return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+      } catch (e) { return false; }
     }
 
     // Robust speak(): prefer female voice, queue until voices are available, cache preferred voice
