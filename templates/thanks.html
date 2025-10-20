@@ -189,6 +189,8 @@
     }
 
     function checkForRole() {
+      // Set a one-time session flag so role.html can show the role avatar overlay
+      try { sessionStorage.setItem('showRoleAvatarOnce', '1'); } catch(e) {}
       // Redirect to home page, which will show role if assigned
       window.location.href = "{{ url_for('home') }}";
     }
