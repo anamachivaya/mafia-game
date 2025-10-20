@@ -1006,8 +1006,20 @@ def _resolve_night_actions(room):
     # muted target if present
     muted = actions.get('sheriff_mute') if 'sheriff_mute' in actions else None
 
-    # Persist night_reports were already handled by cop action; leave as-is
-    room['last_night_events'] = {'killed': deaths, 'muted': muted}
+    # Build reveal entries for killed players so clients can show consistent reveals and logs
+    reveals = []
+    for d in deaths:
+        role = room.get('assignments', {}).get(d)
+        faction = room.get('assignment_factions', {}).get(d) or get_faction_for_role(role)
+        cause = 'killed'
+        text = f"{d} — {role or 'Unknown'} ({cause})"
+        reveals.append({'name': d, 'role': role, 'faction': faction, 'cause': cause, 'time': time.strftime('%H:%M:%S'), 'text': text})
+
+    # Include any cop results or other night_reports in the last_night_events for transparency
+    cop_results = room.get('night_reports', {}) or {}
+
+    # Persist night events including reveals and cop_results so clients can render them
+    room['last_night_events'] = {'killed': deaths, 'muted': muted, 'reveals': reveals, 'cop_results': cop_results}
 
     # check win condition and set phase accordingly will be done by caller
     return {'killed': deaths, 'muted': muted}

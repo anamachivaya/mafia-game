@@ -149,8 +149,20 @@
       <a href="{{ url_for('home') }}" class="btn btn-secondary">← Back to Home</a>
     </div>
   </div>
+  <!-- global mute toggle (icon button) -->
+  <div style="position:fixed;right:14px;bottom:14px;z-index:9999">
+    <button id="siteMuteBtn" aria-pressed="false" aria-label="Mute site" title="Mute site" style="background:#fff;padding:8px;border-radius:20px;box-shadow:0 2px 6px rgba(0,0,0,.15);border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+      <svg id="siteMuteIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M4 9v6h4l5 4V5L8 9H4z" fill="#0f172a"></path>
+        <path id="siteMuteX" d="M16 8l4 4M20 8l-4 4" stroke="#0f172a" stroke-width="2" stroke-linecap="round" style="display:none"></path>
+      </svg>
+    </button>
+  </div>
 </body>
 <script>
+  (function(){ try { const btn = document.getElementById('siteMuteBtn'); const x = document.getElementById('siteMuteX'); if(!btn) return; function setMuted(m){ try{ if(m){ localStorage.setItem('siteMuted','1'); btn.setAttribute('aria-pressed','true'); btn.title = 'Unmute site'; btn.setAttribute('aria-label','Unmute site'); if(x) x.style.display = ''; }else{ localStorage.setItem('siteMuted','0'); btn.setAttribute('aria-pressed','false'); btn.title = 'Mute site'; btn.setAttribute('aria-label','Mute site'); if(x) x.style.display = 'none'; } }catch(e){} }
+    try{ setMuted(localStorage.getItem('siteMuted') === '1'); }catch(e){}
+    btn.addEventListener('click', ()=>{ try{ const now = localStorage.getItem('siteMuted') === '1'; setMuted(!now); }catch(e){} }); } catch(e) { console.warn('site mute init failed', e); } })();
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
       navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });

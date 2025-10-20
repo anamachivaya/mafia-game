@@ -453,4 +453,10 @@
     })();
   </script>
 </body>
+<script>
+  // Init site mute button (eliminated page)
+  (function(){ try { const btn = document.getElementById('siteMuteBtn'); const x = document.getElementById('siteMuteX'); if(!btn) return; function setMuted(m){ try{ if(m){ localStorage.setItem('siteMuted','1'); btn.setAttribute('aria-pressed','true'); btn.title = 'Unmute site'; btn.setAttribute('aria-label','Unmute site'); if(x) x.style.display = ''; }else{ localStorage.setItem('siteMuted','0'); btn.setAttribute('aria-pressed','false'); btn.title = 'Mute site'; btn.setAttribute('aria-label','Mute site'); if(x) x.style.display = 'none'; } }catch(e){} }
+    try{ setMuted(localStorage.getItem('siteMuted') === '1'); }catch(e){}
+    btn.addEventListener('click', ()=>{ try{ const now = localStorage.getItem('siteMuted') === '1'; setMuted(!now); }catch(e){} }); } catch(e) { console.warn('site mute init failed', e); } })();
+</script>
 </html>

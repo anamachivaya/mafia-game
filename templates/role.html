@@ -258,6 +258,45 @@
     .suicide-choice.selected { background: linear-gradient(90deg,#7c3aed,#2563eb); border-color: rgba(124,58,237,0.6); color: white; }
     .suicide-choice.selected .check { background: rgba(255,255,255,0.12); color: #fff; box-shadow: 0 6px 18px rgba(37,99,235,0.18); }
   </style>
+  <style>
+    /* Mobile-fullscreen modal adjustments: make modals full screen on touch devices for safer private actions */
+    .modal-inner { max-width: 640px; margin: 0 auto; }
+    html.has-touch #nightModal > div,
+    html.has-touch #suicideModal > div,
+    html.has-touch #votingModal > div,
+    html.has-touch #actionConfirmModal > div {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: none !important;
+      border-radius: 0 !important;
+      padding: 1rem !important;
+      box-sizing: border-box;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: flex-start !important;
+    }
+    html.has-touch #nightModal { align-items: flex-start; padding-top: 10vh; }
+    html.has-touch #votingModal { align-items: flex-start; padding-top: 10vh; }
+
+    /* Voting banner */
+    #votingBanner { display:none; position:fixed; left:50%; transform:translateX(-50%) translateY(-8px); top:12px; z-index:1400; padding:0.8rem 1rem; border-radius:8px; font-weight:900; color:#fff; background:linear-gradient(90deg,#2563eb,#7c3aed); box-shadow:0 10px 30px rgba(2,6,23,0.6); opacity:0; transition: transform 260ms cubic-bezier(.2,.9,.2,1), opacity 260ms ease; }
+    #votingBanner.show { display:block; transform:translateX(-50%) translateY(0); opacity:1; }
+
+    /* Role reveal overlay (used for kill/lynch reveals). Mobile friendly, full-screen readable card */
+    .reveal-overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(2,6,23,0.86); z-index:1600; }
+    .reveal-card { background: #0b1220; color: #fff; border-radius: 12px; padding: 1.25rem; max-width: 420px; width: min(92%,420px); text-align: center; border: 1px solid rgba(255,255,255,0.04); box-shadow: 0 12px 36px rgba(2,6,23,0.7); }
+    .reveal-name { font-size: 1.6rem; font-weight:900; margin-bottom: 0.25rem; }
+    .reveal-role { font-size: 1.2rem; font-weight:700; color: #fbbf24; margin-bottom: 0.5rem; }
+    .reveal-cause { font-size: 0.95rem; color: #f87171; margin-bottom: 0.85rem; }
+    @keyframes revealPop { 0% { transform: scale(0.88); opacity:0 } 60% { transform: scale(1.04); opacity:1 } 100% { transform: scale(1); opacity:1 } }
+    .reveal-card.pop { animation: revealPop 420ms cubic-bezier(.2,.9,.2,1); }
+
+    /* Eliminated log inside the overlay */
+    #eliminationLog { max-height: 40vh; overflow:auto; margin-top: 0.75rem; background:#071024; border-radius:8px; padding:0.6rem; border:1px solid rgba(255,255,255,0.03); text-align:left; font-size:0.95rem; }
+    #eliminationLog .log-entry { padding:0.35rem 0; border-bottom:1px dashed rgba(255,255,255,0.02); }
+    #eliminationLog .log-entry time { color:#94a3b8; font-size:0.82rem; margin-right:0.5rem; }
+    .log-controls { display:flex; gap:0.5rem; justify-content:center; margin-top:0.6rem; }
+  </style>
 </head>
 <body>
   <div class="card" id="gameCard">
@@ -308,6 +347,37 @@
     <span id="winnerBannerText">Winner: —</span>
   </div>
 
+  <!-- Voting banner (animated) -->
+  <div id="votingBanner">Voting Started — Participate Now</div>
+
+  <!-- Speech notify toggle (client-only) -->
+  <!-- (speech announce removed - speech is automatic when it's your turn) -->
+
+  <!-- Global mute toggle (client-only) -->
+  <div style="position:fixed;right:14px;bottom:64px;z-index:9999">
+    <button id="siteMuteBtn" aria-pressed="false" aria-label="Mute site" title="Mute site"
+      style="background:#fff;padding:8px;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.15);border:none;display:inline-flex;align-items:center;justify-content:center;">
+      <svg id="siteMuteIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11 5L6 9H3v6h3l5 4V5z" />
+        <path id="siteMuteWave" d="M19 9a4 4 0 0 1 0 6" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Role reveal overlay (for kills/lynches) -->
+  <div class="reveal-overlay" id="revealOverlay" aria-hidden="true">
+    <div class="reveal-card" role="dialog" aria-modal="true">
+      <div class="reveal-name" id="revealName">Player</div>
+      <div class="reveal-role" id="revealRole">Role</div>
+      <div class="reveal-cause" id="revealCause">Cause</div>
+      <div id="eliminationLog"></div>
+      <div class="log-controls">
+        <button class="btn" onclick="hideRevealOverlay()">Close</button>
+        <button class="btn btn-primary" onclick="copyEliminationLog()">Copy Log</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Read-only Moderator Dashboard for players (no action buttons) -->
   <div class="card" style="max-width:900px; margin: 1.25rem auto;" id="playerModeratorDashboard">
     <h3 style="margin-top:0;">Game Status</h3>
@@ -331,18 +401,25 @@
         </div>
         <div>
           <div class="small">Voting</div>
+          <!-- Player voting dashboard: visual parity with host voting dashboard (read-only) -->
           <div id="votingDashboard" style="background:#071024; padding:0.5rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:160px; overflow:auto; display:none;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-              <div style="font-weight:700;">Status: <span id="vdVotingStatus">—</span></div>
-              <div style="font-size:0.9rem; color:#94a3b8;">Current: <span id="vdCurrentVoter">—</span></div>
-            </div>
-            <div style="margin-bottom:0.5rem;">
-              <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.25rem;">Tally</div>
-              <div id="vdTally" style="display:flex; gap:0.5rem; flex-wrap:wrap;">—</div>
-            </div>
-            <div>
-              <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:0.25rem;">Vote Log</div>
-              <div id="vdVoteLog" style="max-height:62px; overflow:auto; font-size:0.9rem;">—</div>
+            <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-start;">
+              <div style="flex:1; min-width:140px;">
+                <div class="small">Voting status</div>
+                <div id="votingStatus" style="font-weight:800; font-size:1rem;">—</div>
+                <div class="small" style="margin-top:0.5rem;">Current voter</div>
+                <div id="votingCurrent" style="font-weight:700; font-size:1.05rem;">—</div>
+              </div>
+
+              <div style="flex:1.2; min-width:160px;">
+                <div class="small">Vote tally (players with >=1 vote)</div>
+                <div id="votingTally" style="background:#071024; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:120px; overflow:auto;">—</div>
+              </div>
+
+              <div style="flex:1.4; min-width:180px;">
+                <div class="small">Vote log (running)</div>
+                <div id="votingLog" style="background:#071024; padding:0.75rem; border-radius:8px; border:1px solid rgba(255,255,255,0.03); max-height:120px; overflow:auto;">—</div>
+              </div>
             </div>
           </div>
         </div>
@@ -439,6 +516,8 @@
   // remains visible until the next Day phase begins (server-driven).
   let persistentVotingSnapshot = null;
   let lastSeenPhaseForVoting = null;
+  // Track which voter we've already announced to avoid duplicate announcements
+  let lastAnnouncedVoter = null;
 
     function escapeHtml(str) {
       const p = document.createElement('p');
@@ -659,6 +738,15 @@
               if (killedList && killedList.length) parts.push('<b>Killed:</b> ' + killedList.join(', '));
               if (mutedVal) parts.push('<b>Muted:</b> ' + mutedVal);
               pdLastEvents.innerHTML = parts.length ? parts.join('<br>') : '—';
+              // If server provided reveal details for last night events, append them to elimination log
+              try {
+                const reveals = (data.last_night_events && data.last_night_events.reveals) ? data.last_night_events.reveals : [];
+                if (reveals && reveals.length) {
+                  reveals.forEach(r => {
+                    appendEliminationLogEntry({ time: r.time || new Date().toLocaleTimeString(), text: (r.text || `${r.name} — ${r.role} (${r.cause || 'killed'})`) });
+                  });
+                }
+              } catch(e) { /* non-fatal */ }
             }
           }
         } catch (e) { /* ignore dashboard binding errors */ }
@@ -666,10 +754,10 @@
         try {
           const voting = data.voting || null;
           const vd = document.getElementById('votingDashboard');
-          const vdStatus = document.getElementById('vdVotingStatus');
-          const vdCurrent = document.getElementById('vdCurrentVoter');
-          const vdTally = document.getElementById('vdTally');
-          const vdLog = document.getElementById('vdVoteLog');
+          const vdStatus = document.getElementById('votingStatus') || document.getElementById('vdVotingStatus');
+          const vdCurrent = document.getElementById('votingCurrent') || document.getElementById('vdCurrentVoter');
+          const vdTally = document.getElementById('votingTally') || document.getElementById('vdTally');
+          const vdLog = document.getElementById('votingLog') || document.getElementById('vdVoteLog');
 
           function renderTally(tally) {
             if (!vdTally) return;
@@ -678,17 +766,12 @@
               vdTally.textContent = '—';
               return;
             }
-            const entries = Object.entries(tally).sort((a,b)=> b[1]-a[1]);
-            for (const [name, count] of entries) {
-              const el = document.createElement('div');
-              el.style.padding = '0.25rem 0.5rem';
-              el.style.background = '#0b1220';
-              el.style.border = '1px solid rgba(255,255,255,0.03)';
-              el.style.borderRadius = '6px';
-              el.style.fontWeight = '700';
-              el.textContent = `${name}: ${count}`;
-              vdTally.appendChild(el);
-            }
+            const entries = Object.entries(tally).filter(([k,c]) => (c||0) > 0).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]));
+            vdTally.innerHTML = entries.map(([name,count]) => `<div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;
+                padding:0.25rem 0;">
+                <span>${escapeHtml(name)}</span>
+                <strong>${count}</strong>
+              </div>`).join('');
           }
 
           function renderLog(votes_log) {
@@ -697,13 +780,8 @@
               vdLog.textContent = '—';
               return;
             }
-            vdLog.innerHTML = '';
-            for (const l of votes_log.slice(-20)) {
-              const el = document.createElement('div');
-              el.style.padding = '2px 0';
-              el.textContent = `${l.voter} → ${l.choice}`;
-              vdLog.appendChild(el);
-            }
+            const log = votes_log.slice(-20);
+            vdLog.innerHTML = log.map(l => `<div style="margin-bottom:0.25rem;">${escapeHtml(l.voter || l.from || '')} → <strong>${escapeHtml(l.choice || l.to || '')}</strong></div>`).join('');
           }
 
           // Update persistent snapshot and render. The client persists the last-known voting snapshot
@@ -719,7 +797,9 @@
               if (vdLog) vdLog.textContent = '—';
             } else {
               // Always refresh the persistent snapshot with any voting info we receive from server
+              const wasActive = persistentVotingSnapshot && persistentVotingSnapshot.active;
               persistentVotingSnapshot = voting;
+              try { if (!wasActive && persistentVotingSnapshot && persistentVotingSnapshot.active) showVotingBanner('Voting has started', 2200); } catch(e) {}
             }
           }
 
@@ -747,6 +827,13 @@
               const aliveChoices = data.players.filter(p => !(data.eliminated_players||[]).includes(p));
               renderVotingChoices(aliveChoices);
               try { document.getElementById('votingModal').style.display = 'flex'; } catch(e) {}
+              // Announce only once per voter turn
+              try {
+                if (lastAnnouncedVoter !== persistentVotingSnapshot.current_voter) {
+                  lastAnnouncedVoter = persistentVotingSnapshot.current_voter;
+                  speak("It's your turn to vote. Please select a player and confirm your vote.");
+                }
+              } catch(e) {}
             }
           } else {
             // No snapshot and not Day — keep dashboard hidden
@@ -791,6 +878,8 @@
     // Check elimination status immediately and then every 3 seconds
     checkEliminationStatus();
     setInterval(checkEliminationStatus, 3000);
+
+  // Speech is automatic; no explicit init required
 
     // Suicide modal helpers
     function renderSuicideChoices(choices) {
@@ -922,6 +1011,156 @@
       try { document.getElementById('votingModal').style.display = 'none'; } catch(e) {}
     }
 
+    // Voting banner helpers (animated)
+    let votingBannerTimeout = null;
+    function showVotingBanner(text, duration = 2500) {
+      try {
+        const b = document.getElementById('votingBanner');
+        b.textContent = text || 'Voting Started — Participate Now';
+        b.classList.add('show');
+        if (votingBannerTimeout) clearTimeout(votingBannerTimeout);
+        votingBannerTimeout = setTimeout(() => { hideVotingBanner(); }, duration);
+        // voting banner shown for everyone; per-player announcement handled elsewhere
+      } catch (e) { console.warn('voting banner failed', e); }
+    }
+    function hideVotingBanner() { try { const b = document.getElementById('votingBanner'); if (b) b.classList.remove('show'); } catch(e) {} }
+
+    // Reveal overlay helpers
+    function showRevealOverlay({ name, role, cause, logEntries }) {
+      try {
+        const overlay = document.getElementById('revealOverlay');
+        if (!overlay) return;
+        document.getElementById('revealName').textContent = name || '';
+        document.getElementById('revealRole').textContent = role || '';
+        document.getElementById('revealCause').textContent = cause || '';
+        // populate elimination log
+        const log = document.getElementById('eliminationLog');
+        if (log) {
+          log.innerHTML = '';
+          (logEntries||[]).forEach(e => {
+            const div = document.createElement('div'); div.className = 'log-entry';
+            const t = document.createElement('time'); t.textContent = e.time || '';
+            const txt = document.createElement('span'); txt.innerHTML = e.text || '';
+            div.appendChild(t); div.appendChild(txt);
+            log.appendChild(div);
+          });
+        }
+        overlay.style.display = 'flex';
+        const card = overlay.querySelector('.reveal-card');
+        if (card) { card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop'); }
+      } catch (e) { console.warn('showRevealOverlay failed', e); }
+    }
+    function hideRevealOverlay() { try { const overlay = document.getElementById('revealOverlay'); if (overlay) overlay.style.display = 'none'; } catch(e) {} }
+    function appendEliminationLogEntry(entry) {
+      try {
+        const log = document.getElementById('eliminationLog');
+        if (!log) return;
+        const div = document.createElement('div'); div.className = 'log-entry';
+        const t = document.createElement('time'); t.textContent = entry.time || new Date().toLocaleTimeString();
+        const txt = document.createElement('span'); txt.innerHTML = entry.text || '';
+        div.appendChild(t); div.appendChild(txt);
+        log.appendChild(div);
+      } catch (e) { console.warn('appendEliminationLogEntry failed', e); }
+    }
+    function copyEliminationLog() {
+      try {
+        const log = document.getElementById('eliminationLog'); if (!log) return;
+        const text = Array.from(log.querySelectorAll('.log-entry')).map(le => le.textContent.trim()).join('\n');
+        navigator.clipboard.writeText(text).then(() => { showToast('Log copied'); }).catch(() => { showToast('Copy failed'); });
+      } catch (e) { console.warn('copyEliminationLog error', e); }
+    }
+
+    // ---------------- Speech synthesis for voting notifications ----------------
+    // No speech opt-in checkbox anymore. Voices will be resolved by speak().
+
+    // global mute state (read from localStorage)
+    function isSiteMuted() {
+      try { return localStorage.getItem('siteMuted') === '1'; } catch(e) { return false; }
+    }
+
+    // Robust speak(): prefer female voice, queue until voices are available, cache preferred voice
+    (function() {
+      let preferredVoice = null;
+      let voicesResolved = false;
+      const speakQueue = [];
+
+      function resolvePreferredVoice() {
+        try {
+          const voices = window.speechSynthesis.getVoices() || [];
+          if (!voices || !voices.length) return null;
+          // heuristic list of female voice name fragments
+          const femaleRegex = /female|woman|samantha|emma|amy|joanna|ivy|salli|nicole|kendra|rita|maria|lisa/i;
+          let found = voices.find(v => femaleRegex.test(v.name || ''));
+          if (!found) {
+            const lang = (navigator.language || navigator.userLanguage || '').split('-')[0];
+            found = voices.find(v => v.lang && v.lang.startsWith(lang));
+          }
+          if (!found) found = voices[0];
+          return found || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function flushQueue() {
+        if (!voicesResolved) return;
+        while (speakQueue.length) {
+          const txt = speakQueue.shift();
+          _doSpeak(txt);
+        }
+      }
+
+      function _doSpeak(text) {
+        try {
+          if (isSiteMuted()) return;
+          if (!('speechSynthesis' in window)) return;
+          const u = new SpeechSynthesisUtterance(text);
+          if (preferredVoice) u.voice = preferredVoice;
+          u.rate = 1.0; u.pitch = 1.0;
+          try { window.speechSynthesis.cancel(); } catch(e) {}
+          window.speechSynthesis.speak(u);
+        } catch (e) { console.warn('speak failed', e); }
+      }
+
+      // Public speak function used in templates
+      window.speak = function(text) {
+        try {
+          if (isSiteMuted()) return;
+          if (!('speechSynthesis' in window)) return;
+          // If voices aren't resolved yet, queue the text and trigger resolution
+          if (!voicesResolved) {
+            speakQueue.push(text);
+            // attempt to resolve immediately
+            preferredVoice = resolvePreferredVoice();
+            if (preferredVoice) {
+              voicesResolved = true;
+              flushQueue();
+            }
+            return;
+          }
+          _doSpeak(text);
+        } catch (e) { console.warn('speak failed', e); }
+      };
+
+      // Listen for voiceschanged to resolve and flush queue
+      try {
+        const onVoicesChanged = () => {
+          if (!voicesResolved) {
+            preferredVoice = resolvePreferredVoice();
+            voicesResolved = true;
+            flushQueue();
+          }
+        };
+        window.speechSynthesis.addEventListener('voiceschanged', onVoicesChanged);
+        // try immediate resolution in case voices are already available
+        preferredVoice = resolvePreferredVoice();
+        if (preferredVoice) {
+          voicesResolved = true;
+          flushQueue();
+        }
+      } catch (e) { /* non-fatal */ }
+    })();
+
     async function submitVote(choice) {
       try {
         const form = new URLSearchParams();
@@ -931,6 +1170,7 @@
         if (d && d.success) {
           showToast('Vote submitted', 900);
           closeVotingModal();
+          try { speak('You voted for ' + choice + '.'); } catch(e) {}
           // refresh immediately so players and host see updated log/tally
           setTimeout(() => { checkEliminationStatus(); }, 250);
         } else {
@@ -1256,13 +1496,38 @@
 
     // Poll game-state for night-phase actions every 2.5s
     setInterval(checkGamePhaseForActions, 2500);
+
+    // Init site mute toggle (player)
+    (function(){
+      try {
+        const btn = document.getElementById('siteMuteBtn');
+        const iconWave = document.getElementById('siteMuteWave');
+        if (!btn) return;
+        const setMutedState = (muted) => {
+          try { btn.setAttribute('aria-pressed', muted ? 'true' : 'false'); } catch(e) {}
+          try { btn.title = muted ? 'Unmute site' : 'Mute site'; } catch(e) {}
+          if (iconWave) iconWave.style.display = muted ? 'none' : '';
+        };
+        let initialMuted = false;
+        try { initialMuted = localStorage.getItem('siteMuted') === '1'; } catch(e) {}
+        setMutedState(initialMuted);
+        btn.addEventListener('click', () => {
+          try {
+            const currently = (localStorage.getItem('siteMuted') === '1');
+            const next = !currently;
+            localStorage.setItem('siteMuted', next ? '1' : '0');
+            setMutedState(next);
+          } catch(e) { console.warn('site mute toggle failed', e); }
+        });
+      } catch(e) { console.warn('site mute init failed', e); }
+    })();
   </script>
-</body>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
-    });
-  }
-</script>
-</html>
+  </body>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
+      });
+    }
+  </script>
+  </html>
