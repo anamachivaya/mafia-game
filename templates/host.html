@@ -624,7 +624,38 @@
       <button id="copyJoinBtn" class="btn btn-secondary btn-copy" onclick="copyJoinLink()">Copy</button>
       <span id="copyStatus" class="copy-status" aria-live="polite"></span>
     </p>
+    <p style="margin-top:0.5rem;">
+      <button class="btn btn-danger" id="closeRoomBtn" onclick="closeRoom()">Close Room</button>
+      <span class="small" style="color:#94a3b8; margin-left:0.5rem;">Closing will remove the room from the server and allow creating a new room with the same name.</span>
+    </p>
   </div>
+
+  <script>
+    async function closeRoom(){
+      if(!confirm('Are you sure you want to close this room? This will remove it for all players.')) return;
+      try{
+        const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM_NAME)}/close`, { method: 'POST' });
+        if(!resp.ok){
+          const err = await resp.json().catch(()=>({error:'unknown'}));
+          alert('Failed to close room: '+(err.error||resp.statusText));
+          return;
+        }
+        const data = await resp.json();
+        if(data && data.success){
+          // clear host cookies locally and navigate home
+          document.cookie = 'host_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          document.cookie = 'host_room=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          alert('Room closed. You will be returned to the home page.');
+          window.location.href = '{{ url_for("home") }}';
+        } else {
+          alert('Failed to close room');
+        }
+      }catch(e){
+        console.error('closeRoom failed', e);
+        alert('Error closing room');
+      }
+    }
+  </script>
 
   <!-- Host Chat Panel (hidden by default) -->
   <div id="hostChatPanel" class="panel" style="display:none; max-width:900px; margin: 0 auto;">

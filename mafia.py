@@ -161,6 +161,36 @@ def home():
                     response.set_cookie('room_name', '', expires=0)
                     return response
 
+    # If no explicit player cookies, check whether this device is already
+    # registered as a player in another active room and restore that session.
+    room_for_device, player_for_device = find_player_room_by_device(player_ip)
+    if room_for_device and player_for_device:
+        room = get_room_or_404(room_for_device)
+        if room:
+            # If eliminated, show eliminated page
+            is_eliminated = player_for_device in room.get('eliminated_players', [])
+            if is_eliminated:
+                resp = make_response_with_device_cookie('eliminated.html', name=player_for_device, room_name=room_for_device, player_ip=player_ip)
+                resp.set_cookie('player_name', player_for_device, max_age=COOKIE_TTL)
+                resp.set_cookie('room_name', room_for_device, max_age=COOKIE_TTL)
+                return resp
+
+            # If game started and role assigned, go to role view
+            if room.get('game_started') and player_for_device in room.get('assignments', {}):
+                role = room['assignments'][player_for_device]
+                description = get_role_description(role)
+                faction = room.get('assignment_factions', {}).get(player_for_device) or get_faction_for_role(role)
+                resp = make_response_with_device_cookie('role.html', name=player_for_device, role=role, description=description, faction=faction, room_name=room_for_device, player_ip=player_ip)
+                resp.set_cookie('player_name', player_for_device, max_age=COOKIE_TTL)
+                resp.set_cookie('room_name', room_for_device, max_age=COOKIE_TTL)
+                return resp
+
+            # otherwise show thanks lobby
+            resp = make_response_with_device_cookie('thanks.html', name=player_for_device, room_name=room_for_device, player_ip=player_ip)
+            resp.set_cookie('player_name', player_for_device, max_age=COOKIE_TTL)
+            resp.set_cookie('room_name', room_for_device, max_age=COOKIE_TTL)
+            return resp
+
     # Default landing page
     return make_response_with_device_cookie('home.html', error=error)
 
@@ -182,6 +212,21 @@ def get_room_or_404(room_name):
             rooms.pop(room_name, None)
             return None
         return room
+
+
+def find_player_room_by_device(device_id):
+    """Search all rooms for a player matching device_id.
+    Returns (room_name, player_name) or (None, None) if not found.
+    """
+    with lock:
+        for rn, room in rooms.items():
+            # skip expired rooms
+            if _room_expired(room):
+                continue
+            for p in room.get('players', []):
+                if p.get('device_id') == device_id:
+                    return rn, p.get('name')
+    return None, None
 
 
 def _assign_chat_color_for_player(room, player_name):
@@ -306,6 +351,14 @@ def join_page(room_name):
         return 'Room not found or expired', 404
     
     player_ip = get_device_id()
+    # If this device already belongs to a different room, redirect back to that room.
+    other_room, other_name = find_player_room_by_device(player_ip)
+    if other_room and other_room != room_name:
+        # Redirect the user to their existing room's thanks page and restore cookies
+        resp = make_response_with_device_cookie('thanks.html', name=other_name, room_name=other_room, player_ip=player_ip)
+        resp.set_cookie('player_name', other_name, max_age=COOKIE_TTL)
+        resp.set_cookie('room_name', other_room, max_age=COOKIE_TTL)
+        return resp
     
     with lock:
         # Check if this device has already joined this room
@@ -356,6 +409,32 @@ def refresh_host_activity(response):
 def enter_room():
     # simple helper page to enter a room name
     return render_template('enter_room.html')
+    
+
+
+@app.route('/api/rooms/<room_name>/close', methods=['POST'])
+def api_close_room(room_name):
+    """Host-only: close (delete) the room so it can be recreated with same name.
+    Clears host cookies in the response.
+    """
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not host_token or host_room != room_name or host_token != room.get('host_token'):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        # delete the room
+        rooms.pop(room_name, None)
+
+    # Clear host cookies so host view is revoked
+    resp = make_response(jsonify({'success': True}))
+    resp.set_cookie('host_token', '', expires=0)
+    resp.set_cookie('host_room', '', expires=0)
+    return resp
 
 
 @app.route('/room/<room_name>/join', methods=['POST'])
@@ -370,6 +449,14 @@ def join_room(room_name):
     
     if not name:
         return redirect(url_for('join_page', room_name=room_name, error='Name is required'))
+
+    # If this device is already in another active room, redirect back to that room.
+    other_room, other_name = find_player_room_by_device(player_ip)
+    if other_room and other_room != room_name:
+        resp = make_response_with_device_cookie('thanks.html', name=other_name, room_name=other_room, player_ip=player_ip)
+        resp.set_cookie('player_name', other_name, max_age=COOKIE_TTL)
+        resp.set_cookie('room_name', other_room, max_age=COOKIE_TTL)
+        return resp
 
     with lock:
         # Check player password if set
@@ -392,14 +479,14 @@ def join_room(room_name):
             return redirect(url_for('join_page', room_name=room_name, error='Name already taken'))
 
         # Add new player with device ID (only if device hasn't joined before)
-    room['players'].append({'name': name, 'device_id': player_ip})
-    # Pre-assign a chat color for this player to avoid flash on first message
-    _assign_chat_color_for_player(room, name)
+        room['players'].append({'name': name, 'device_id': player_ip})
+        # Pre-assign a chat color for this player to avoid flash on first message
+        _assign_chat_color_for_player(room, name)
 
-    resp = make_response_with_device_cookie('thanks.html', name=name, room_name=room_name, player_ip=player_ip)
-    resp.set_cookie('player_name', name, max_age=COOKIE_TTL)      # Changed from ROOM_TTL
-    resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)   # Changed from ROOM_TTL
-    return resp
+        resp = make_response_with_device_cookie('thanks.html', name=name, room_name=room_name, player_ip=player_ip)
+        resp.set_cookie('player_name', name, max_age=COOKIE_TTL)      # Changed from ROOM_TTL
+        resp.set_cookie('room_name', room_name, max_age=COOKIE_TTL)   # Changed from ROOM_TTL
+        return resp
 
 
 
