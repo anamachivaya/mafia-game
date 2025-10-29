@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Admin Login - Mafia</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <style>
+    :root{
+      --bg:#071126;
+      --panel:#081226;
+      --muted:#94a3b8;
+      --accent:#2563eb;
+      --danger:#c2410c;
+    }
+    html,body{height:100%;}
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; background: linear-gradient(180deg,#071126 0%, #041022 100%); color: #e2e8f0; display:flex; align-items:center; justify-content:center; padding: 2rem; }
+    .container { width:100%; max-width:420px; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); padding: 2.25rem; border-radius: 12px; box-shadow: 0 12px 40px rgba(2,6,23,0.7); border:1px solid rgba(255,255,255,0.03); }
+    h2 { margin:0 0 1rem 0; font-size:1.5rem; color:#f1f5f9; }
+    label{display:block;margin-top:.6rem;margin-bottom:.35rem;color:var(--muted);font-size:.95rem}
+    input { width: 100%; padding: .75rem; margin-bottom: .25rem; border-radius: 8px; border: 1px solid #233044; background: #031020; color: #e2e8f0; box-sizing:border-box; }
+    input:focus{outline:none;border-color:var(--accent);box-shadow:0 6px 20px rgba(37,99,235,0.12)}
+    .btn { padding: .65rem 1rem; border-radius: 8px; cursor: pointer; border: none; font-weight:600 }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-secondary{ background: transparent; color: var(--muted); border:1px solid rgba(255,255,255,0.04); padding:.6rem .9rem }
+    .actions{display:flex;gap:.6rem;align-items:center;margin-top:1rem}
+    .error { background: #7f1d1d; color: #fca5a5; padding: .75rem; border-radius: 8px; margin-bottom: .75rem; border:1px solid rgba(255,0,0,0.08)}
+    .hint{color:var(--muted);font-size:.9rem;margin-top:.5rem}
+    @media (max-width:480px){ .container{padding:1.25rem;border-radius:10px} h2{font-size:1.25rem} }
+  </style>
+</head>
+<body>
+  <div class="container" role="main" aria-labelledby="admin-title">
+    <h2 id="admin-title">Admin Login</h2>
+    {% if error %}
+      <div class="error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" novalidate>
+      <label for="admin-username">Username</label>
+      <input id="admin-username" name="username" type="text" autocomplete="username" required placeholder="admin username" />
+      <label for="admin-password">Password</label>
+      <input id="admin-password" name="password" type="password" autocomplete="current-password" required placeholder="password" />
+      <div class="hint">This login grants access to room management. Keep credentials safe.</div>
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Sign in</button>
+        <a class="btn btn-secondary" href="{{ url_for('home') }}">Back</a>
+      </div>
+    </form>
+  </div>
+</body>
+</html>

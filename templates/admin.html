@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Admin Dashboard - Mafia</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 2rem; background: #071126; color: #e2e8f0; }
+    .container { max-width: 900px; margin: 4vh auto; background: #041022; padding: 1.5rem; border-radius: 10px; }
+    h1 { margin-bottom: .5rem; }
+    .room { border: 1px solid #213547; padding: .75rem; margin-bottom: .75rem; border-radius: 8px; background: #071a2a; }
+    .meta { color: #9fb3c8; font-size: .9rem; }
+    ul { margin: .5rem 0 0 1rem; }
+    .logout { float: right; }
+    .btn { padding: .5rem .75rem; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-logout { background:#b91c1c; color: white; }
+    .empty { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <form method="post" action="{{ url_for('admin_logout') }}" style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="btn btn-logout" type="submit">Logout</button>
+    </form>
+    <h1>Admin Dashboard</h1>
+    <p class="meta">Shows all open rooms and players in each room. (Snapshot)</p>
+
+    {% if not rooms %}
+      <div class="empty">No open rooms.</div>
+    {% else %}
+      {% for rn, info in rooms.items() %}
+        <div class="room">
+          <strong>{{ rn }}</strong>
+          <div class="meta">Created: {{ info.created_at | default('unknown') }} · Players: {{ info.players | length }} · Game started: {{ info.game_started }}</div>
+          <div style="margin-top:.5rem;display:flex;gap:1rem;align-items:flex-start;justify-content:space-between;">
+            <div style="flex:1;">
+        <b>Players</b>
+          {% if info.players %}
+          <ul>
+                    {% for p in info.players %}
+                      <li data-player="{{ p }}" style="display:flex;align-items:center;gap:.5rem;">
+                        <span class="player-name">{{ p }}{% if p in info.eliminated_players %} (eliminated){% endif %}</span>
+                        <button class="btn kick-btn" data-room="{{ rn }}" data-player="{{ p }}" style="background:#c2410c;color:#fff;border-radius:6px;padding:.25rem .5rem;margin-left:.5rem;">Kick</button>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                  {% else %}
+                    <div class="empty">No players in this room.</div>
+                  {% endif %}
+            </div>
+            <div style="min-width:160px;">
+              <!-- Close room button -->
+              <button class="btn close-btn" data-room="{{ rn }}" data-close-url="{{ url_for('api_admin_close_room', room_name=rn) }}" style="background:#7f1d1d;color:#fff;padding:.5rem .75rem;border-radius:6px;">Close room</button>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</body>
+<script>
+  // Simple toast helper
+  function showToast(msg, isError) {
+    let t = document.createElement('div');
+    t.textContent = msg;
+    t.style.position = 'fixed';
+    t.style.right = '20px';
+    t.style.bottom = '20px';
+    t.style.padding = '10px 14px';
+    t.style.borderRadius = '8px';
+    t.style.boxShadow = '0 6px 18px rgba(0,0,0,0.3)';
+    t.style.zIndex = 9999;
+    t.style.color = '#fff';
+    t.style.background = isError ? '#991b1b' : '#16a34a';
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(()=>t.remove(), 300); }, 3000);
+  }
+
+  // Confirm action helper
+  function confirmAction(message) {
+    return window.confirm(message);
+  }
+
+  async function postForm(url, data) {
+    const body = new URLSearchParams(data);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: body.toString()
+    });
+    const ctype = res.headers.get('content-type') || '';
+    if (ctype.indexOf('application/json') !== -1) {
+      return await res.json();
+    }
+    return { success: res.ok };
+  }
+
+  // Wire kick buttons
+  document.querySelectorAll('.kick-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const room = btn.dataset.room;
+      const player = btn.dataset.player;
+      if (!confirmAction(`Kick player ${player} from room ${room}?`)) return;
+      const url = `/api/admin/rooms/${encodeURIComponent(room)}/kick`;
+      try {
+        const resp = await postForm(url, { player_name: player });
+        if (resp && resp.success) {
+          // remove player row from UI
+          const li = btn.closest('li');
+          if (li) li.remove();
+          showToast(`Kicked ${player}`);
+        } else {
+          showToast(resp && resp.error ? resp.error : 'Failed to kick', true);
+        }
+      } catch (err) {
+        showToast('Network error', true);
+      }
+    });
+  });
+
+  // Wire close buttons
+  document.querySelectorAll('.close-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const room = btn.dataset.room;
+      if (!confirmAction(`Close room ${room}? This will delete the room.`)) return;
+      const url = `/api/admin/rooms/${encodeURIComponent(room)}/close`;
+      try {
+        const resp = await postForm(url, {});
+        if (resp && resp.success) {
+          // remove room card from UI
+          const roomDiv = btn.closest('.room');
+          if (roomDiv) roomDiv.remove();
+          showToast(`Closed ${room}`);
+        } else {
+          showToast(resp && resp.error ? resp.error : 'Failed to close room', true);
+        }
+      } catch (err) {
+        showToast('Network error', true);
+      }
+    });
+  });
+</script>
+</html>
