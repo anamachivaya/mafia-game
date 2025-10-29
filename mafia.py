@@ -9,6 +9,10 @@ from flask import send_from_directory
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 
+# Admin credentials (simple site-admin logic)
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'abisheknew')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Treadstone1&')
+
 # In-memory store (resets when the server restarts)
 # rooms: map room_name -> {
 #   host_password, player_password, host_token, created_at,
@@ -342,6 +346,184 @@ def host_dashboard(room_name):
         return redirect(url_for('host_login'))
 
     return render_template('host.html', room_name=room_name)
+
+
+@app.route('/admin_login', methods=['GET', 'POST'])
+def admin_login():
+    """Simple admin login using configured credentials. Sets session['is_admin']=True on success."""
+    if request.method == 'GET':
+        return render_template('admin_login.html')
+
+    # POST
+    try:
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+            session['is_admin'] = True
+            # Redirect to admin dashboard
+            return redirect(url_for('admin_dashboard'))
+
+        return render_template('admin_login.html', error='Invalid credentials')
+    except Exception as e:
+        import traceback
+        print('[ADMIN_LOGIN_ERROR] Exception during admin login:')
+        traceback.print_exc()
+        return render_template('admin_login.html', error='Internal server error (check server logs)')
+
+
+@app.route('/admin', methods=['GET'])
+def admin_dashboard():
+    """Admin dashboard showing all open (non-expired) rooms and players in each room.
+    Protected by session flag set by /admin_login.
+    """
+    if not session.get('is_admin'):
+        return redirect(url_for('admin_login'))
+
+    try:
+        # Build a snapshot of current non-expired rooms
+        snapshot = {}
+        with lock:
+            for rn, room in list(rooms.items()):
+                if _room_expired(room):
+                    continue
+                # include lightweight details
+                snapshot[rn] = {
+                    'created_at': room.get('created_at'),
+                    'player_password_set': room.get('player_password') is not None,
+                    'game_started': room.get('game_started', False),
+                    'players': [p.get('name') for p in room.get('players', [])],
+                    'eliminated_players': list(room.get('eliminated_players', []))
+                }
+
+        return render_template('admin.html', rooms=snapshot)
+    except Exception:
+        import traceback
+        print('[ADMIN_DASH_ERROR] Exception while rendering admin dashboard:')
+        traceback.print_exc()
+        # Fail gracefully: render login with an error to avoid exposing 500
+        return render_template('admin_login.html', error='Unable to load admin dashboard (check server logs)')
+
+
+@app.route('/admin_logout', methods=['POST'])
+def admin_logout():
+    session.pop('is_admin', None)
+    return redirect(url_for('home'))
+
+
+def _is_admin_request():
+    """Return True if the current request is performed by an authenticated admin session."""
+    try:
+        return bool(session.get('is_admin'))
+    except Exception:
+        return False
+
+
+@app.route('/api/admin/rooms', methods=['GET'])
+def api_admin_rooms():
+    """Return JSON snapshot of open (non-expired) rooms. Admin-only."""
+    if not _is_admin_request():
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    snapshot = {}
+    with lock:
+        for rn, room in list(rooms.items()):
+            if _room_expired(room):
+                continue
+            snapshot[rn] = {
+                'created_at': room.get('created_at'),
+                'player_password_set': room.get('player_password') is not None,
+                'game_started': room.get('game_started', False),
+                'players': [p.get('name') for p in room.get('players', [])],
+                'eliminated_players': list(room.get('eliminated_players', []))
+            }
+
+    return jsonify({'rooms': snapshot})
+
+
+@app.route('/api/admin/rooms/<room_name>/close', methods=['POST'])
+def api_admin_close_room(room_name):
+    """Allow admin to close (delete) a room. Also allowed for the host via host_token as before."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Allow host (existing behavior) or admin session
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not _is_admin_request() and (not host_token or host_room != room_name or host_token != room.get('host_token')):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    with lock:
+        rooms.pop(room_name, None)
+
+    # If the request likely came from a browser form (Accepts HTML), redirect back to admin UI.
+    accept = request.headers.get('Accept', '')
+    wants_html = ('text/html' in accept) or ('application/json' not in accept)
+    if wants_html:
+        return redirect(url_for('admin_dashboard'))
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/admin/rooms/<room_name>/kick', methods=['POST'])
+def api_admin_kick_player(room_name):
+    """Allow admin to kick a player from a room.
+    Accepts form param 'player_name'."""
+    room = get_room_or_404(room_name)
+    if not room:
+        return jsonify({'error': 'Room not found or expired'}), 404
+
+    # Allow host (existing behavior) or admin session
+    host_token = request.cookies.get('host_token')
+    host_room = request.cookies.get('host_room')
+    if not _is_admin_request() and (not host_token or host_room != room_name or host_token != room.get('host_token')):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    player_name = request.form.get('player_name', '').strip()
+    if not player_name:
+        return jsonify({'error': 'Player name is required'}), 400
+
+    with lock:
+        if 'players' not in room:
+            room['players'] = []
+
+        before = len(room['players'])
+        room['players'][:] = [p for p in room['players'] if p['name'] != player_name]
+        after = len(room['players'])
+
+        if before == after:
+            return jsonify({'error': 'Player not found in room'}), 404
+
+        room['assignments'].pop(player_name, None)
+        if 'eliminated_players' in room and player_name in room['eliminated_players']:
+            room['eliminated_players'].remove(player_name)
+        if 'chat_colors' in room and player_name in room['chat_colors']:
+            room['chat_colors'].pop(player_name, None)
+
+        # Notify via chat stream so connected clients can react (optional)
+        try:
+            import time
+            if 'chat' not in room:
+                room['chat'] = []
+            mid = room.get('chat_next_id', 1)
+            room['chat_next_id'] = mid + 1
+            kick_msg = {
+                'id': mid,
+                'sender': 'SYSTEM',
+                'text': f'Player {player_name} was kicked by admin',
+                'ts': int(time.time()),
+                'type': 'kick',
+                'target': player_name,
+                'color': 'hsl(0,0%,50%)'
+            }
+            room.setdefault('chat', []).append(kick_msg)
+            if len(room['chat']) > 1000:
+                room['chat'] = room['chat'][-1000:]
+        except Exception:
+            pass
+
+    return jsonify({'success': True, 'message': f'{player_name} has been kicked from the room'})
 
 
 @app.route('/room/<room_name>', methods=['GET'])
@@ -2152,6 +2334,12 @@ def api_kick_player(room_name):
             # non-fatal if notification fails
             pass
     print(f"[KICK] room={room_name} kicked={player_name}")
+    # If browser form submission, redirect back to admin dashboard for better UX
+    accept = request.headers.get('Accept', '')
+    wants_html = ('text/html' in accept) or ('application/json' not in accept)
+    if wants_html:
+        return redirect(url_for('admin_dashboard'))
+
     return jsonify({'success': True, 'message': f'{player_name} has been kicked from the room'})
 
 @app.route('/static/<filename>')
