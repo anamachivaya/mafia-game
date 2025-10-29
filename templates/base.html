@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Mafia Game">
+  <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
+  <title>{% block title %}Mafia Game{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="theme-light">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="{{ url_for('home') }}">Mafia</a>
+      <nav class="site-nav">
+        <a href="{{ url_for('create_room') }}">Create</a>
+        <a href="{{ url_for('host_login') }}">Host</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">Created by Scissors. Powered by Sunisha and Diet Coke</div>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

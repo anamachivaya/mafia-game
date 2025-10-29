@@ -1,413 +1,112 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Joined - Mafia Game</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="manifest" href="/static/manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Mafia Game">
-  <link rel="apple-touch-icon" href="/static/mafia_bg_pic.jpg">
+{% extends 'base.html' %}
+
+{% block title %}Waiting — Mafia{% endblock %}
+
+{% block head %}
   <style>
-    body { 
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; 
-      padding: 2rem; 
-      background: #0f172a; 
-      color: #e2e8f0; 
-      min-height: 100vh;
-      margin: 0;
-    }
-    .card { 
-      max-width: 520px; 
-      margin: 5vh auto; 
-      background: #1e293b; 
-      padding: 2rem; 
-      border-radius: 12px; 
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
-      border: 1px solid #334155;
-    }
-    h1 { 
-      margin-top: 0; 
-      font-size: 1.6rem; 
-      color: #f1f5f9;
-    }
-    p { 
-      line-height: 1.6; 
-      color: #cbd5e1;
-    }
-    .button-group { 
-      margin-top: 2rem; 
-    }
-    .btn { 
-      padding: 0.8rem 1.5rem; 
-      font-size: 1rem; 
-      border: none; 
-      border-radius: 8px; 
-      cursor: pointer; 
-      margin-right: 0.5rem; 
-      margin-bottom: 0.5rem;
-      font-weight: 600;
-      transition: all 0.2s ease;
-    }
-    .btn-primary { 
-      background: #2563eb; 
-      color: white; 
-    }
-    .btn-primary:hover { 
-      background: #1e40af; 
-    }
-    .btn-success { 
-      background: #059669; 
-      color: white; 
-    }
-    .btn-success:hover { 
-      background: #047857; 
-    }
-    .btn-danger { 
-      background: #dc2626; 
-      color: white; 
-    }
-    .btn-danger:hover { 
-      background: #b91c1c; 
-    }
-    .footer { 
-      text-align: center; 
-      margin-top: 2rem; 
-      color: #94a3b8; 
-      font-size: 0.9rem; 
-    }
-    a { 
-      color: #60a5fa; 
-      text-decoration: none; 
-    }
-    a:hover { 
-      color: #93c5fd; 
-      text-decoration: underline; 
-    }
-    .status-indicator {
-      background: #374151;
-      padding: 1rem;
-      border-radius: 8px;
-      margin: 1rem 0;
-      text-align: center;
-      border-left: 4px solid #fbbf24;
-      transition: all 0.3s ease;
-    }
-    .status-indicator.waiting {
-      border-left-color: #fbbf24;
-      background: #451a03;
-      color: #fbbf24;
-    }
-    .status-indicator.ready {
-      border-left-color: #34d399;
-      background: #064e3b;
-      color: #34d399;
-    }
-    .last-updated {
-      font-size: 0.8rem;
-      color: #94a3b8;
-      margin-top: 0.5rem;
-    }
-    .pulse {
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.7; }
-    }
-    /* Chat styles (reuse same as eliminated) */
-    .chat-container { margin-top: 1rem; background: #0b1220; padding: 0.6rem; border-radius: 8px; }
-    .chat-messages { max-height: 220px; overflow-y: auto; padding: 0.5rem; }
-    .chat-message { padding: 0.35rem 0.5rem; margin-bottom: 0.3rem; border-radius: 6px; background: #111827; color: #e2e8f0; }
-    .chat-input { display:flex; gap:0.5rem; margin-top:0.5rem; }
-    .chat-input input[type="text"] { flex:1; padding:0.5rem; border-radius:6px; border:1px solid #374151; background:#0f172a; color:#e2e8f0; }
-    .chat-send { padding:0.5rem 0.8rem; border-radius:6px; border:none; background:#2563eb; color:white; cursor:pointer; }
+    /* Scoped tweaks for the waiting/thanks page */
+    .card{max-width:720px;margin:6vh auto}
+    .status-cta{margin-top:12px;display:flex;gap:10px;align-items:center;justify-content:center}
+    #checkButton[disabled]{opacity:0.7;cursor:not-allowed}
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
   <div class="card">
     <h1>Welcome, {{ name | e }}!</h1>
-    <p>You've joined the Mafia game successfully.</p>
-    
-    <div class="status-indicator waiting" id="statusIndicator">
-      <div id="statusText">
-        <strong>Status:</strong> <span id="statusMessage">Checking game status...</span>
-      </div>
-      <div class="last-updated" id="lastUpdated">Last updated: —</div>
+    <p class="text-muted">You're in the lobby for room <strong>{{ room_name | e }}</strong>. Please wait while the host prepares the game.</p>
+
+    <div id="statusIndicator" class="status-indicator waiting">
+      <div id="statusText"><span class="state">Status:</span> <span id="statusMessage">Checking game status…</span></div>
+      <div id="lastUpdated" class="last-updated">Last updated: —</div>
     </div>
-    
-    <p id="instructionText">Waiting for host to assign roles...</p>
+
+    <p id="instructionText">The host will assign roles when ready. This page will automatically redirect you to your role when it becomes available.</p>
 
     <div id="lobbyPlayersSection" style="margin-top:1rem; display:none;">
-      <div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Players in lobby</div>
-      <ul id="lobbyList" style="list-style:none; padding:0; margin:0; display:flex; gap:0.5rem; flex-wrap:wrap;
-        ">
-      </ul>
+      <div style="font-weight:700; margin-bottom:0.5rem;">Players in lobby (<span id="playerCount">0</span>)</div>
+      <ul id="lobbyList" class="lobby-list" aria-live="polite"></ul>
     </div>
 
-    <div class="button-group">
-      <button class="btn btn-primary" onclick="checkForRole()" id="checkButton">
-        <span id="buttonText">Check for Role Assignment</span>
-      </button>
-      
-      <form method="post" action="{{ url_for('leave') }}" style="display: inline;">
-        <input type="hidden" name="player_name" value="{{ name }}">
-        {% if room_name %}
-        <input type="hidden" name="room_name" value="{{ room_name }}">
-        {% endif %}
-        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you want to leave the game?')">Leave Game</button>
-      </form>
+    <div class="status-cta">
+      <button id="checkButton" class="btn btn-ghost" type="button">Refresh status</button>
+      <button id="viewRoleBtn" class="btn btn-primary" disabled type="button">View my role</button>
     </div>
   </div>
+{% endblock %}
 
-  <div class="footer">
-    Created by Scissors. Powered by Sunisha and Diet Coke
-    {% if player_ip %}
-    <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #64748b;">
-      Your IP: {{ player_ip | e }}
-    </div>
-    {% endif %}
-  </div>
-
-  <script>
-    const statusIndicator = document.getElementById('statusIndicator');
+{% block scripts %}
+<script>
+  (function(){
+    const PLAYER = {{ name | tojson }};
+    const ROOM = {{ room_name | tojson }};
     const statusMessage = document.getElementById('statusMessage');
     const lastUpdated = document.getElementById('lastUpdated');
-    const instructionText = document.getElementById('instructionText');
+    const lobbyList = document.getElementById('lobbyList');
+    const playerCountEl = document.getElementById('playerCount');
+    const lobbyPlayersSection = document.getElementById('lobbyPlayersSection');
+    const viewRoleBtn = document.getElementById('viewRoleBtn');
     const checkButton = document.getElementById('checkButton');
-    const buttonText = document.getElementById('buttonText');
-    
-    let gameStarted = false;
-    let playerName = "{{ name | e }}";
-    const ROOM_NAME = "{{ room_name | e }}";
 
-    function escapeHtml(str) {
-      const p = document.createElement('p');
-      p.innerText = str;
-      return p.innerHTML;
+    let lastTs = null;
+
+    function renderPlayers(players){
+      playerCountEl.textContent = (players || []).length;
+      lobbyList.innerHTML = '';
+      (players || []).forEach(p=>{
+        const li = document.createElement('li');
+        li.textContent = p;
+        lobbyList.appendChild(li);
+      });
+      lobbyPlayersSection.style.display = (players && players.length) ? 'block' : 'none';
     }
 
-    function checkForRole() {
-      // Redirect to home page, which will show role if assigned
-      window.location.href = "{{ url_for('home') }}";
-    }
-
-    async function updateGameStatus() {
-      try {
-        // Use the correct API endpoint - either room-based or global
-        const roomName = "{{ room_name | e }}";
-        let apiUrl;
-        if (roomName) {
-          apiUrl = `/api/rooms/${roomName}/players`;
-        } else {
-          apiUrl = '/api/players';
-        }
-        const response = await fetch(apiUrl, { cache: 'no-store' });
-        const data = await response.json();
-        
+    async function fetchStatus(){
+      try{
+        const res = await fetch(`/api/rooms/${encodeURIComponent(ROOM)}/players`, {cache:'no-store'});
+        if (!res.ok) throw new Error('Network');
+        const data = await res.json();
         const now = new Date();
-        lastUpdated.textContent = `Last updated: ${now.toLocaleTimeString()}`;
-        
-        if (data.game_started) {
-          // Game has started, check if this player has a role
-          if (data.assignments && data.assignments[playerName]) {
-            statusIndicator.className = 'status-indicator ready pulse';
-            statusMessage.textContent = 'Role assigned! Click to view your role.';
-            instructionText.textContent = 'Your role has been assigned! Click the button below to see your role and description.';
-            checkButton.className = 'btn btn-success pulse';
-            buttonText.textContent = 'View My Role';
-            gameStarted = true;
-            // hide lobby players once game started / assignment available
-            document.getElementById('lobbyPlayersSection').style.display = 'none';
+        lastUpdated.textContent = 'Last updated: ' + now.toLocaleTimeString();
+
+        // Update players display
+        renderPlayers(data.players || []);
+
+        // Determine assignment: prefer authoritative assignments mapping returned by players endpoint
+        const assignments = data.assignments || {};
+        const gameStarted = !!data.game_started;
+
+        if (gameStarted && assignments && Object.keys(assignments).length){
+          // If the server has marked game_started and assignments are present, check whether this player has an assignment
+          if (assignments[PLAYER]){
+            statusMessage.textContent = 'Role assigned — redirecting you to your role...';
+            viewRoleBtn.disabled = false;
+            viewRoleBtn.classList.remove('btn-ghost');
+            viewRoleBtn.classList.add('btn-primary');
+            // small delay so user sees message, then navigate to root which will render role view
+            setTimeout(()=>{ window.location.href = '/'; }, 700);
+            return;
           } else {
-            statusIndicator.className = 'status-indicator waiting';
-            statusMessage.textContent = 'Game started but role not found.';
-            instructionText.textContent = 'The game has started but there seems to be an issue with your role assignment.';
-            checkButton.className = 'btn btn-primary';
-            buttonText.textContent = 'Check Again';
+            statusMessage.textContent = 'Game started, awaiting assignment for you.';
+            viewRoleBtn.disabled = false; // allow manual check
           }
         } else {
-          // Game not started yet
-          const playerCount = data.count || 0;
-          statusIndicator.className = 'status-indicator waiting';
-          statusMessage.textContent = `Waiting for host to assign roles... (${playerCount} players joined)`;
-          instructionText.textContent = 'The host is still setting up the game. Please wait for role assignment.';
-          checkButton.className = 'btn btn-primary';
-          buttonText.textContent = 'Check for Role Assignment';
-          gameStarted = false;
-          // show lobby players list so waiting players see who joined
-          const lobbySection = document.getElementById('lobbyPlayersSection');
-          const lobbyList = document.getElementById('lobbyList');
-          lobbyList.innerHTML = '';
-          (data.players || []).forEach(p => {
-            const li = document.createElement('li');
-            li.textContent = p;
-            li.style.padding = '0.35rem 0.6rem';
-            li.style.background = '#374151';
-            li.style.borderRadius = '999px';
-            li.style.color = '#f1f5f9';
-            li.style.fontWeight = '600';
-            lobbyList.appendChild(li);
-          });
-          lobbySection.style.display = (data.players && data.players.length) ? 'block' : 'none';
+          statusMessage.textContent = `Waiting for host to assign roles... (${data.count || 0} players)`;
+          viewRoleBtn.disabled = true;
         }
-        
-      } catch (error) {
-        console.error('Error checking game status:', error);
-        statusMessage.textContent = 'Error checking game status';
-        lastUpdated.textContent = `Last updated: (error contacting server)`;
+
+      }catch(err){
+        statusMessage.textContent = 'Unable to reach server — retrying…';
       }
     }
 
-    // Check status immediately when page loads
-    updateGameStatus();
-    
-    // Check status every 3 seconds
-    setInterval(updateGameStatus, 3000);
+    // Button handlers
+    checkButton.addEventListener('click', function(){ fetchStatus(); });
+    viewRoleBtn.addEventListener('click', function(){ window.location.href = '/'; });
 
-    // Chat for lobby with client_id dedupe and per-user colors
-    (function(){
-      const chatContainerId = 'chatMessages';
-      const chatInputId = 'chatInput';
-      const chatSendId = 'chatSend';
-      const ROOM = ROOM_NAME;
-
-  const seenIds = new Set();
-  const pending = {};
-  const seenClientIds = new Set();
-  const serverColors = {}; // authoritative colors from server
-
-      // Build a shuffled high-contrast palette per room and map names to palette entries
-      function buildPalette(room){
-        const PALETTE_SIZE = 24;
-        const base = [];
-        for(let i=0;i<PALETTE_SIZE;i++) base.push(Math.floor(i*(360/PALETTE_SIZE)));
-        // simple deterministic shuffle using room name as seed
-        let seed = 0;
-        for(let i=0;i<room.length;i++) seed = (seed*31 + room.charCodeAt(i)) >>> 0;
-        // Fisher-Yates with seeded RNG
-        function rnd(){ seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
-        for(let i=base.length-1;i>0;i--){ const j = Math.floor(rnd()*(i+1)); const t = base[i]; base[i]=base[j]; base[j]=t; }
-        return base;
-      }
-      const _palette = buildPalette(ROOM_NAME || 'global');
-      const _paletteMap = new Map();
-      function nameColor(name){
-        if(!name) return 'hsl(210,50%,50%)';
-        if(_paletteMap.has(name)) return _paletteMap.get(name);
-        // assign next available hue deterministically based on name hash
-        let hidx = 0; for(let i=0;i<name.length;i++) hidx = (hidx*31 + name.charCodeAt(i)) % _palette.length;
-        const hue = _palette[hidx];
-        const col = `hsl(${hue},85%,45%)`;
-        _paletteMap.set(name, col);
-        return col;
-      }
-      function formatTs(ts){ if(!ts) return ''; const d=new Date((ts||0)*1000); return d.toLocaleTimeString(); }
-
-      function createEl(m, opts={}){
-        const el = document.createElement('div'); el.className='chat-message'; if(opts.pending) el.classList.add('pending');
-        if(m.id) el.dataset.msgId = m.id; if(m.client_id) el.dataset.clientId = m.client_id;
-        const name = document.createElement('strong'); name.textContent = m.sender; name.style.color = m.color || nameColor(m.sender||'');
-        const ts = document.createElement('span'); ts.style.color='#94a3b8'; ts.style.fontSize='0.8rem'; ts.style.marginLeft='0.5rem'; ts.textContent=formatTs(m.ts);
-        const text = document.createElement('div'); text.style.marginTop='0.25rem'; text.innerHTML = escapeHtml(m.text);
-        el.appendChild(name); el.appendChild(ts); el.appendChild(text);
-        return el;
-      }
-
-      function appendOrUpdate(m){
-        if(!m) return;
-        if(m.client_id && pending[m.client_id]){
-          const el = pending[m.client_id];
-          if(m.id) el.dataset.msgId = m.id;
-          el.classList.remove('pending');
-          el.querySelector('strong').style.color = m.color || nameColor(m.sender||'');
-          delete pending[m.client_id];
-          if(m.id) seenIds.add(m.id);
-          // mark that we've now reconciled this client_id
-          if(m.client_id) seenClientIds.add(m.client_id);
-          return;
-        }
-
-        // if we already showed this client_id locally (optimistic) and there's no pending element, skip
-        if(m.client_id && seenClientIds.has(m.client_id)) return;
-
-        if(m.id && seenIds.has(m.id)) return;
-        if(m.id) seenIds.add(m.id);
-
-        const el = createEl(m);
-        const c = document.getElementById(chatContainerId);
-        if(!c) return;
-        c.appendChild(el);
-        c.scrollTop = c.scrollHeight;
-      }
-
-      async function postMessage(){
-        const input = document.getElementById(chatInputId); if(!input) return; const text = input.value.trim(); if(!text) return; input.value='';
-      const client_id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('c-'+Date.now()+'-'+Math.random().toString(36).slice(2,8));
-      const now = Math.floor(Date.now()/1000);
-      const optimistic = { sender: playerName, text, ts: now, client_id };
-      // ensure optimistic message has a color immediately to avoid flashes
-      optimistic.color = serverColors[playerName] || nameColor(playerName);
-  // mark as seen client id immediately to avoid race where server echoes before pending is attached
-  seenClientIds.add(client_id);
-  const el = createEl(optimistic, { pending:true });
-  pending[client_id]=el;
-  const c = document.getElementById(chatContainerId);
-  c.appendChild(el);
-  c.scrollTop=c.scrollHeight;
-        try{ const form=new URLSearchParams(); form.append('message', text); form.append('client_id', client_id); await fetch(`/api/rooms/${encodeURIComponent(ROOM)}/chat`, { method:'POST', body: form }); }catch(e){ console.error('post chat failed', e); }
-      }
-
-      async function pollOnce(){ try{ const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM)}/chat`, { cache: 'no-store' }); const data = await resp.json(); (data.messages||[]).forEach(m => appendOrUpdate(m)); }catch(e){ console.warn('poll chat failed', e); } }
-
-      function wire(){ const send = document.getElementById(chatSendId); const input = document.getElementById(chatInputId); if(send) send.addEventListener('click', postMessage); if(input) input.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); postMessage(); }}); }
-
-      function start(){
-        wire();
-        if(window.EventSource){
-          try{
-            const es = new EventSource(`/api/rooms/${encodeURIComponent(ROOM)}/chat/stream`);
-            es.onmessage = function(evt){
-              try{
-                const payload = JSON.parse(evt.data);
-                // If server sent a kick notification targeting this player, act on it
-                if(payload.message && payload.message.type === 'kick' && payload.message.target === playerName){
-                  // Clear player cookies so the client must rejoin, show an alert and redirect
-                  document.cookie = 'player_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                  document.cookie = 'room_name=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT';
-                  try{ alert('You have been kicked from the lobby by the host. You will be returned to the home page.'); }catch(e){}
-                  window.location.href = '{{ url_for("home") }}';
-                  return;
-                }
-                if(payload.messages) payload.messages.forEach(m => appendOrUpdate(m));
-                else if(payload.message) appendOrUpdate(payload.message);
-              }catch(e){}
-            };
-            es.onerror = function(){ console.warn('SSE error, fallback to polling'); setInterval(pollOnce,2500); };
-          }catch(e){ setInterval(pollOnce,2500); pollOnce(); }
-        }else{ setInterval(pollOnce,2500); pollOnce(); }
-      }
-
-      // Fetch server-side authoritative colors early so optimistic messages can use them
-      async function fetchServerColors(){
-        try{
-          const resp = await fetch(`/api/rooms/${encodeURIComponent(ROOM)}/players`, { cache: 'no-store' });
-          const data = await resp.json();
-          if (data.chat_colors) Object.assign(serverColors, data.chat_colors);
-        }catch(e){ /* ignore */ }
-      }
-
-      // build chat UI
-      (function(){ const lobbySection = document.getElementById('lobbyPlayersSection'); if(!lobbySection) return; const chatWrap = document.createElement('div'); chatWrap.className='chat-container'; chatWrap.innerHTML = `<div style="font-weight:700; color:#f1f5f9; margin-bottom:0.5rem;">Lobby Chat</div><div id="chatMessages" class="chat-messages"></div><div class="chat-input"><input id="chatInput" type="text" placeholder="Write a message..." /><button id="chatSend" class="chat-send">Send</button></div>`; lobbySection.appendChild(chatWrap); start(); })();
-    })();
-  </script>
-</body>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('/static/sw.js').catch(function(err){ console.warn('SW registration failed:', err); });
-    });
-  }
+    // Poll for updates but keep interval modest to avoid extra server load
+    fetchStatus();
+    setInterval(fetchStatus, 2500);
+  })();
 </script>
-</html>
+{% endblock %}

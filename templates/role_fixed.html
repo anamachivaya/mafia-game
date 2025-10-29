@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block title %}Your Role — Mafia (Fixed){% endblock %}
+
+{% block head %}
+  <style>
+    .card{max-width:760px;margin:4vh auto;padding:1.25rem;border-radius:12px}
+    .role-badge{font-size:1.25rem;font-weight:800}
+    .description{color:var(--muted);margin-top:.5rem}
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="card">
+    <h1 id="playerName">{{ name | e }}</h1>
+    <div class="role-badge" id="roleBadge">{{ role | e }}</div>
+    <div id="roleDescription" class="description">{{ description | e }}</div>
+    <div id="factionBadge" class="muted small">{{ faction | e }}</div>
+    <div style="margin-top:1rem"><a class="btn btn-ghost" href="/">Back</a></div>
+  </div>
+{% endblock %}
