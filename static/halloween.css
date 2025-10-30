@@ -15,14 +15,15 @@ body{
   font-family: 'Segoe UI', Roboto, -apple-system, system-ui, 'Helvetica Neue', Arial;
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
-  /* layered spooky background: existing photo tinted + gradient */
-  background-image:
-    radial-gradient(circle at 10% 10%, rgba(255,122,24,0.06), transparent 5%),
-    linear-gradient(180deg, rgba(11,7,18,0.85), rgba(40,12,30,0.9)),
-    url('/static/mafia_bg_pic.jpg');
-  background-size: cover, cover, cover;
-  background-position: center center;
-  background-attachment: fixed;
+  /* fallback background: single image that will be stretched to width and
+     tiled vertically (repeat-y). JS will override this with the chosen
+     Halloween image; keeping repeat-y + width-fit prevents empty bottom
+     areas on tall pages. */
+  background-image: url('/static/mafia_bg_pic.jpg');
+  background-size: 100% auto;
+  background-repeat: repeat-y;
+  background-position: center top;
+  background-attachment: scroll;
 }
 /* Overlay removed per user request — no global dimming */
 /* body::before removed so background images show without a dark page-wide overlay */

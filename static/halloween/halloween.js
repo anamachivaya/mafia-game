@@ -11,31 +11,32 @@
     // apply the chosen image to the body (no global dark overlay)
     document.addEventListener('DOMContentLoaded', function(){
       try{
-        document.body.style.backgroundImage = "url('" + pick + "')";
-        document.body.style.backgroundSize = 'cover';
-        // start with centered position; we'll adjust on scroll for a parallax effect
-        document.body.style.backgroundPosition = 'center center';
-        // use 'scroll' attachment so mobile browsers behave consistently
-        document.body.style.backgroundAttachment = 'scroll';
-        document.body.style.backgroundRepeat = 'no-repeat';
-
-        // Simpler subtle parallax: move the background a fixed fraction of the
-        // page scroll. This is lighter-weight and meets the user's request for
-        // a weaker parallax (factor 0.25). Background remains 'cover' to avoid
-        // empty horizontal gaps.
-
-        document.body.style.backgroundSize = 'cover';
-        document.body.style.backgroundPosition = 'center center';
+  document.body.style.backgroundImage = "url('" + pick + "')";
+  // Stretch the image to fit the viewport width, then tile vertically so
+  // the page (including the bottom) is always covered. This stitches the
+  // image top-to-bottom infinitely and avoids empty bottoms on tall pages.
+  document.body.style.backgroundSize = '100% auto';
+  document.body.style.backgroundRepeat = 'repeat-y';
+  document.body.style.backgroundPosition = 'center top';
+  // use 'scroll' attachment so mobile browsers behave consistently
+  document.body.style.backgroundAttachment = 'scroll';
 
         let latestScroll = 0;
         let ticking = false;
-        const factor = 0.25; // user-requested weaker parallax (25% of scroll)
+  // Make the background move slower than the foreground. Reduce the
+  // parallax multiplier so the background pans more subtly.
+  // Lower values => background moves slower. Changed from 0.25 -> 0.08.
+  const factor = 0.55; // background moves at 8% of scroll
 
         function updateBackground(){
           const sc = latestScroll;
           const y = Math.round(sc * factor);
-          // Use center-based offset so cover images pan naturally
-          document.body.style.backgroundPosition = `center calc(50% + ${-y}px)`;
+          // Move the tiled background in the opposite direction of the page
+          // scroll but at a reduced rate so the foreground appears to move
+          // faster. Previously the background was moving in the same
+          // direction and appeared faster; flipping the sign makes the
+          // foreground feel quicker while the background lags behind.
+          document.body.style.backgroundPosition = `center ${y}px`;
           ticking = false;
         }
 
